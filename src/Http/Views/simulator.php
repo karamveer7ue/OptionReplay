@@ -83,12 +83,14 @@
           <label class="check small"><input type="checkbox" id="payoff-t0" checked> T+0 curve</label>
           <label class="check small"><input type="checkbox" id="charges-toggle"> Include charges</label>
           <label class="small">Range ±<input type="number" id="payoff-range" value="8" min="2" max="40" step="1" class="tiny">%</label>
+          <button class="btn btn-sm" id="payoff-reset" hidden title="Double-click the chart also resets">Reset zoom</button>
+          <span class="muted small zoom-hint">Drag on the chart to zoom</span>
         </div>
       </div>
       <div class="chart-wrap"><svg id="payoff-chart" class="chart" role="img" aria-label="Payoff chart"></svg><div class="chart-tip" id="payoff-tip" hidden></div></div>
     </div>
     <div class="view" id="view-pnl" hidden>
-      <div class="pnl-head"><div class="metrics" id="pnl-metrics"></div><span class="muted small">Mark-to-market from the time the first leg was added up to the current time.</span></div>
+      <div class="pnl-head"><div class="metrics" id="pnl-metrics"></div><div class="payoff-controls"><button class="btn btn-sm" id="pnl-reset" hidden title="Double-click the chart also resets">Reset zoom</button><span class="muted small">Mark-to-market since the first leg was added. Drag on the chart to zoom.</span></div></div>
       <div class="chart-wrap"><svg id="pnl-chart" class="chart" role="img" aria-label="P&amp;L over time chart"></svg><div class="chart-tip" id="pnl-tip" hidden></div></div>
     </div>
     <div class="view" id="view-spot" hidden>

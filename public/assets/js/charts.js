@@ -29,10 +29,36 @@
   }
 
   /**
+   * Horizontal drag selection. Calls onZoom(xa, xb) in SVG pixel space when the user releases after a
+   * drag wider than 6px; a plain click is ignored so hover tooltips keep working.
+   */
+  function attachSelection(svg, m, w, h, onZoom) {
+    const rect = el('rect', { class: 'select-rect', y: m.t, height: h - m.t - m.b, x: 0, width: 0, visibility: 'hidden' }, svg);
+    let startX = null;
+    const px = (ev) => { const r = svg.getBoundingClientRect(); return (ev.clientX - r.left) * (w / r.width); };
+    svg.addEventListener('mousedown', (ev) => { if (ev.button !== 0) return; startX = Math.max(m.l, Math.min(w - m.r, px(ev))); ev.preventDefault(); });
+    svg.addEventListener('mousemove', (ev) => {
+      if (startX === null) return;
+      const x = Math.max(m.l, Math.min(w - m.r, px(ev)));
+      rect.setAttribute('x', Math.min(startX, x)); rect.setAttribute('width', Math.abs(x - startX)); rect.setAttribute('visibility', 'visible');
+    });
+    const finish = (ev) => {
+      if (startX === null) return;
+      const x = Math.max(m.l, Math.min(w - m.r, px(ev)));
+      rect.setAttribute('visibility', 'hidden');
+      const a = Math.min(startX, x), b = Math.max(startX, x);
+      startX = null;
+      if (b - a > 6) onZoom(a, b);
+    };
+    svg.addEventListener('mouseup', finish);
+    svg.addEventListener('mouseleave', (ev) => { if (startX !== null) finish(ev); });
+  }
+
+  /**
    * Payoff chart.
    * data: { xs:number[], expiry:number[], t0:number[]|null, spot:number, breakevens:number[], lotLabel:string }
    */
-  function drawPayoff(svg, tip, data) {
+  function drawPayoff(svg, tip, data, opts = {}) {
     clear(svg);
     const { w, h } = size(svg);
     const m = { t: 14, r: 18, b: 28, l: 64 };
@@ -69,10 +95,12 @@
     path(data.expiry, 'expiry-line');
     if (data.t0) path(data.t0, 't0-line');
 
-    (data.breakevens || []).forEach((b) => {
-      if (b < xMin || b > xMax) return;
+    let lastLabelX = -Infinity, row = 0;
+    (data.breakevens || []).filter((b) => b >= xMin && b <= xMax).sort((a, b) => a - b).forEach((b) => {
       el('line', { x1: X(b), x2: X(b), y1: m.t, y2: h - m.b, class: 'be' }, svg);
-      el('text', { x: X(b), y: m.t + 10, 'text-anchor': 'middle', class: 'be-label' }, svg).textContent = fmtNum(b);
+      row = X(b) - lastLabelX < 56 ? 1 - row : 0; // stagger labels that would collide
+      lastLabelX = X(b);
+      el('text', { x: X(b), y: m.t + 10 + row * 12, 'text-anchor': 'middle', class: 'be-label' }, svg).textContent = fmtNum(b);
     });
     if (data.spot >= xMin && data.spot <= xMax) {
       el('line', { x1: X(data.spot), x2: X(data.spot), y1: m.t, y2: h - m.b, class: 'spot-line' }, svg);
@@ -97,10 +125,11 @@
       tip.style.left = (X(data.xs[i]) * rect.width / w) + 'px'; tip.style.top = (Y(data.expiry[i]) * rect.height / h) + 'px';
     };
     svg.onmouseleave = () => { tip.hidden = true; [cursor, dot1, dot2].forEach((d) => d.setAttribute('visibility', 'hidden')); };
+    if (opts.onZoom) attachSelection(svg, m, w, h, (a, b) => opts.onZoom(xMin + (a - m.l) / iw * (xMax - xMin), xMin + (b - m.l) / iw * (xMax - xMin)));
   }
 
   /** P&L over time. points: [{t:Date, v:number, spot:number}], marks: [{t:Date,label}] */
-  function drawPnl(svg, tip, points, marks) {
+  function drawPnl(svg, tip, points, marks, opts = {}) {
     clear(svg);
     const { w, h } = size(svg);
     const m = { t: 14, r: 18, b: 30, l: 64 };
@@ -136,6 +165,7 @@
       tip.hidden = false; tip.style.left = (X(i) * rect.width / w) + 'px'; tip.style.top = (Y(p.v) * rect.height / h) + 'px';
     };
     svg.onmouseleave = () => { tip.hidden = true; cursor.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); };
+    if (opts.onZoom) attachSelection(svg, m, w, h, (a, b) => opts.onZoom(Math.round((a - m.l) / iw * (points.length - 1)), Math.round((b - m.l) / iw * (points.length - 1))));
   }
 
   /** Thumbnail of a template payoff shape (unit strikes, unit premiums). */

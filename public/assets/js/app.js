@@ -26,6 +26,7 @@
   const S = {
     u: null, at: null, expiry: null, snap: null, chain: null, chainExpiry: null, legs: [], quotes: {}, name: '',
     view: 'payoff', autoplay: null, settings: null, spotChart: null, spotSeries: null, spotInterval: '5m', firstScroll: true,
+    payoffZoom: null, pnlZoom: null, pnlPoints: null, pnlMarks: null,
   };
   const underlyings = () => window.APP.underlyings;
   const U = () => underlyings().find((x) => x.symbol === S.u);
@@ -242,7 +243,7 @@
     if (ev.target.classList.contains('toggle-leg')) l.on = ev.target.checked;
     renderLegs(); renderPayoff(); writeHash(); if (S.view === 'pnl') loadPnl();
   });
-  $('reset-legs').onclick = () => { if (!S.legs.length || confirm('Clear all legs?')) { S.legs = []; S.name = ''; $('strategy-name').value = ''; refreshLegs(); renderChain(); writeHash(); } };
+  $('reset-legs').onclick = () => { if (!S.legs.length || confirm('Clear all legs?')) { S.legs = []; S.name = ''; S.payoffZoom = null; S.pnlZoom = null; $('strategy-name').value = ''; refreshLegs(); renderChain(); writeHash(); } };
   $('strategy-name').oninput = (e) => { S.name = e.target.value; writeHash(); };
 
   /* ---------- payoff ---------- */
@@ -252,7 +253,8 @@
     const r = S.settings?.risk_free_rate ?? 0.065;
     const pct = Math.max(2, Math.min(40, +$('payoff-range').value || 8)) / 100;
     const n = 160, xs = [];
-    for (let i = 0; i <= n; i++) xs.push(spot * (1 - pct) + spot * 2 * pct * i / n);
+    const lo = S.payoffZoom ? S.payoffZoom[0] : spot * (1 - pct), hi = S.payoffZoom ? S.payoffZoom[1] : spot * (1 + pct);
+    for (let i = 0; i <= n; i++) xs.push(lo + (hi - lo) * i / n);
     const target = legs.reduce((m, l) => (l.expiry < m ? l.expiry : m), legs[0].expiry); // nearest expiry
     const targetAt = target + 'T15:30';
     const includeCharges = $('charges-toggle').checked;
@@ -281,7 +283,8 @@
   }
   function renderPayoff() {
     const d = payoffData();
-    window.Charts.drawPayoff($('payoff-chart'), $('payoff-tip'), d);
+    window.Charts.drawPayoff($('payoff-chart'), $('payoff-tip'), d, { onZoom: (a, b) => { S.payoffZoom = [a, b]; renderPayoff(); } });
+    $('payoff-reset').hidden = !S.payoffZoom;
     const m = $('metrics');
     if (!d) { m.innerHTML = ''; return; }
     const legs = activeLegs();
@@ -315,13 +318,34 @@
       return { t: ts, v, spot };
     });
     const marks = legs.map((l) => ({ t: parseTs(l.entryAt), label: `${l.side} ${l.kind} ${fmtNum(l.strike)}` }));
-    window.Charts.drawPnl($('pnl-chart'), $('pnl-tip'), points, marks);
+    S.pnlPoints = points; S.pnlMarks = marks;
+    drawPnlView();
     if (points.length) {
       const vals = points.map((p) => p.v), hi = Math.max(...vals), lo = Math.min(...vals);
       const metric = (label, value, cls = '') => `<div class="metric"><span class="metric-label">${label}</span><span class="metric-value ${cls}">${value}</span></div>`;
       $('pnl-metrics').innerHTML = metric('Peak', fmtMoney(hi), 'pos') + metric('Trough', fmtMoney(lo), 'neg') + metric('Now', fmtMoney(vals[vals.length - 1]), vals[vals.length - 1] >= 0 ? 'pos' : 'neg') + metric('Since', fmtAt(from));
     }
   }
+
+  function drawPnlView() {
+    const pts = S.pnlPoints || [];
+    let view = pts;
+    if (S.pnlZoom && pts.length > 2) {
+      const a = Math.max(0, Math.min(pts.length - 2, S.pnlZoom[0])), b = Math.max(a + 1, Math.min(pts.length - 1, S.pnlZoom[1]));
+      view = pts.slice(a, b + 1);
+      if (view.length < 2) { S.pnlZoom = null; view = pts; }
+    }
+    window.Charts.drawPnl($('pnl-chart'), $('pnl-tip'), view, S.pnlMarks || [], { onZoom: (a, b) => {
+      const base = S.pnlZoom ? S.pnlZoom[0] : 0;
+      S.pnlZoom = [base + a, base + b]; drawPnlView();
+    } });
+    $('pnl-reset').hidden = !S.pnlZoom;
+  }
+  $('payoff-reset').onclick = () => { S.payoffZoom = null; renderPayoff(); };
+  $('pnl-reset').onclick = () => { S.pnlZoom = null; drawPnlView(); };
+  $('payoff-chart').addEventListener('dblclick', () => { S.payoffZoom = null; renderPayoff(); });
+  $('pnl-chart').addEventListener('dblclick', () => { S.pnlZoom = null; drawPnlView(); });
+  $('payoff-range').addEventListener('change', () => { S.payoffZoom = null; });
 
   /* ---------- spot chart ---------- */
   function ensureSpotChart() {
@@ -457,7 +481,12 @@
     if (S.spotChart) { S.spotChart.remove(); S.spotChart = null; S.spotSeries = null; if (S.view === 'spot') loadSpotChart(); }
     renderPayoff();
   };
-  window.addEventListener('resize', () => { renderPayoff(); if (S.view === 'pnl') loadPnl(); });
+  window.addEventListener('resize', () => { renderPayoff(); if (S.view === 'pnl') drawPnlView(); });
+  // The chart area shrinks as the legs table grows; redraw to the new size.
+  if (window.ResizeObserver) {
+    let raf = null;
+    new ResizeObserver(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (S.view === 'payoff') renderPayoff(); if (S.view === 'pnl') drawPnlView(); }); }).observe($('view-payoff').parentElement);
+  }
 
   /* ---------- boot ---------- */
   async function boot() {
