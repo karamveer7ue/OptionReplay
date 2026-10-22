@@ -60,6 +60,9 @@ final class Runner
             }
             usleep($delayMs * 1000);
         }
+        if ($processed > 0) {
+            \App\Core\Cache::forget('range_');
+        }
         return $processed;
     }
 

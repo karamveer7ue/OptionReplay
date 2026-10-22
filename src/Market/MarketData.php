@@ -33,27 +33,59 @@ final class MarketData
     }
 
     /**
-     * Simulatable range: the span where both spot and option candles exist (options are the
-     * binding constraint, Kotak publishes them with a lag). Falls back to spot when no options yet.
+     * Simulatable range: the span where both spot and option candles exist. Brokers publish option
+     * history with a lag and a few contracts at a time, so the upper bound is the latest day on which at
+     * least half of the contracts that were live and already trading have candles. Falls back to spot
+     * when no options exist yet.
      * @return array{min:?string,max:?string}
      */
     public static function dataRange(int $underlyingId): array
     {
+        return \App\Core\Cache::remember("range_{$underlyingId}", 120, fn () => self::computeDataRange($underlyingId));
+    }
+
+    /** @return array{min:?string,max:?string} */
+    private static function computeDataRange(int $underlyingId): array
+    {
         $spot = Database::one('SELECT MIN(ts) mn, MAX(ts) mx FROM spot_candles_1m WHERE underlying_id = ?', [$underlyingId]);
-        $opt = Database::one(
-            'SELECT MIN(x.mn) mn, MAX(x.mx) mx FROM (
-                SELECT (SELECT MIN(ts) FROM candles_1m c WHERE c.instrument_id = i.id) mn,
-                       (SELECT MAX(ts) FROM candles_1m c WHERE c.instrument_id = i.id AND TIME(c.ts) <= \'15:30:00\') mx
-                FROM instruments i WHERE i.underlying_id = ?) x',
-            [$underlyingId],
-        );
         $min = $spot['mn'] ?? null;
         $max = $spot['mx'] ?? null;
-        if (!empty($opt['mn']) && $min !== null) {
-            $min = max($min, $opt['mn']);
+        $rows = Database::all(
+            'SELECT i.expiry,
+                    (SELECT MIN(ts) FROM candles_1m c WHERE c.instrument_id = i.id) mn,
+                    (SELECT MAX(ts) FROM candles_1m c WHERE c.instrument_id = i.id AND TIME(c.ts) <= \'15:30:00\') mx
+             FROM instruments i WHERE i.underlying_id = ? HAVING mn IS NOT NULL',
+            [$underlyingId],
+        );
+        if (!$rows || $min === null) {
+            return ['min' => $min, 'max' => $max];
         }
-        if (!empty($opt['mx']) && $max !== null) {
-            $max = min($max, $opt['mx']);
+        $optMin = min(array_column($rows, 'mn'));
+        $min = max($min, $optMin);
+        // Candidate days, newest first: for each, count contracts live that day and already listed
+        // (first candle on or before the day) versus those whose data reaches the day.
+        $days = array_unique(array_map(fn ($r) => substr((string) $r['mx'], 0, 10), $rows));
+        rsort($days);
+        $covered = null;
+        foreach ($days as $day) {
+            $live = 0;
+            $has = 0;
+            foreach ($rows as $r) {
+                if ($r['expiry'] >= $day && substr((string) $r['mn'], 0, 10) <= $day) {
+                    $live++;
+                    if (substr((string) $r['mx'], 0, 10) >= $day) {
+                        $has++;
+                    }
+                }
+            }
+            if ($live > 0 && $has / $live >= 0.5) {
+                $covered = $day;
+                break;
+            }
+        }
+        if ($covered !== null) {
+            $dayMax = max(array_map(fn ($r) => (string) $r['mx'], array_filter($rows, fn ($r) => substr((string) $r['mx'], 0, 10) === $covered)));
+            $max = min($max, $dayMax);
         }
         return ['min' => $min, 'max' => $max];
     }

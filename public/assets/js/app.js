@@ -74,6 +74,9 @@
       S.snap = await api('/api/snapshot', { u: S.u, at: S.at });
     } catch (e) { toast(e.message); return; }
     S.at = S.snap.at;
+    const rmax = S.snap.range.max ? S.snap.range.max.replace(' ', 'T').slice(0, 16) : null;
+    if (rmax && S.at > rmax && !S._clamped) { S._clamped = true; S.at = rmax; toast('Moved to the latest time with complete option data'); return load(); }
+    S._clamped = false;
     $('time-input').value = S.at; $('time-label').textContent = fmtAt(S.at) + (S.snap.is_trading_day ? '' : ' · holiday');
     renderMarketStrip();
     const exps = S.snap.expiries;
@@ -184,7 +187,7 @@
       try {
         const q = await api('/api/quotes', { u: S.u, at: S.at, ids: S.legs.map((l) => l.id).join(',') });
         S.quotes = {}; q.quotes.forEach((x) => { S.quotes[x.id] = x; });
-        S.legs.forEach((l) => { const x = S.quotes[l.id]; if (x) { l.now = x.ltp; l.lotSize = x.lot_size || l.lotSize; l.symbol = x.symbol; l.iv = x.iv; l.delta = x.delta; l.theta = x.theta; l.gamma = x.gamma; l.vega = x.vega; l.expired = x.expired; l.settled = !!x.settled; } });
+        S.legs.forEach((l) => { const x = S.quotes[l.id]; if (x && x.ltp !== null) { l.now = x.ltp; l.stale = !!x.stale; l.lotSize = x.lot_size || l.lotSize; l.symbol = x.symbol; l.iv = x.iv; l.delta = x.delta; l.theta = x.theta; l.gamma = x.gamma; l.vega = x.vega; l.expired = x.expired; l.settled = !!x.settled; } else { l.stale = true; } });
       } catch (e) { toast(e.message); }
     }
     renderLegs(); renderPayoff();
@@ -212,7 +215,7 @@
         <td>${fmtDate(l.expiry)}${l.expired ? ' <span class="tag">expired</span>' : ''}</td><td>${fmtNum(l.strike)}</td><td>${l.kind}</td>
         <td><input type="number" class="lots" min="1" max="500" value="${l.lots}"></td>
         <td title="Entered ${fmtAt(l.entryAt)}">${fmtNum(l.entryPrice, 2)}</td>
-        <td>${l.now === null || l.now === undefined ? '–' : fmtNum(l.now, 2)}${l.settled ? ' <small class="muted">settled</small>' : ''}</td>
+        <td class="${l.stale && !l.settled ? 'stale-now' : ''}" title="${l.stale && !l.settled ? 'No trade at this minute. Showing the last known price.' : ''}">${l.now === null || l.now === undefined ? '–' : fmtNum(l.now, 2)}${l.settled ? ' <small class="muted">settled</small>' : (l.stale ? ' <small class="muted">last</small>' : '')}</td>
         <td class="${pnl >= 0 ? 'pos' : 'neg'}"><b>${fmtMoney(pnl)}</b></td>
         <td>${l.iv ? l.iv.toFixed(1) : '–'}</td><td>${l.delta !== null && l.delta !== undefined ? (sign(l) * l.delta).toFixed(2) : '–'}</td><td>${l.theta !== null && l.theta !== undefined ? fmtNum(sign(l) * l.theta * qty(l), 0) : '–'}</td>
         <td><button class="btn btn-sm btn-ghost" data-act="remove" title="Remove leg">✕</button></td></tr>`;
@@ -224,7 +227,8 @@
     const vega = legs.reduce((s, l) => s + (l.vega || 0) * sign(l) * qty(l), 0), gamma = legs.reduce((s, l) => s + (l.gamma || 0) * sign(l) * qty(l), 0);
     const includeCharges = $('charges-toggle').checked;
     const net = total - (includeCharges ? ch : 0);
-    $('legs-foot').innerHTML = `<span>Net premium <b>${premium >= 0 ? 'credit ' : 'debit '}${fmtMoney(Math.abs(premium))}</b></span><span>Current P&amp;L <b class="${net >= 0 ? 'pos' : 'neg'}">${fmtMoney(net)}</b></span><span>Charges <b>${fmtMoney(ch)}</b>${includeCharges ? '' : ' <span class="muted">(not included)</span>'}</span><span>Δ <b>${fmtNum(delta, 1)}</b></span><span>Γ <b>${fmtNum(gamma, 3)}</b></span><span>Θ/day <b>${fmtNum(theta, 0)}</b></span><span>Vega <b>${fmtNum(vega, 0)}</b></span>`;
+    const staleCount = legs.filter((l) => l.stale && !l.settled).length;
+    $('legs-foot').innerHTML = (staleCount ? `<span class="warn">⚠ ${staleCount} leg${staleCount > 1 ? 's' : ''} without a trade at this minute, using last known price</span>` : '') + `<span>Net premium <b>${premium >= 0 ? 'credit ' : 'debit '}${fmtMoney(Math.abs(premium))}</b></span><span>Current P&amp;L <b class="${net >= 0 ? 'pos' : 'neg'}">${fmtMoney(net)}</b></span><span>Charges <b>${fmtMoney(ch)}</b>${includeCharges ? '' : ' <span class="muted">(not included)</span>'}</span><span>Δ <b>${fmtNum(delta, 1)}</b></span><span>Γ <b>${fmtNum(gamma, 3)}</b></span><span>Θ/day <b>${fmtNum(theta, 0)}</b></span><span>Vega <b>${fmtNum(vega, 0)}</b></span>`;
   }
   $('legs-body').addEventListener('click', (ev) => {
     const tr = ev.target.closest('tr'); if (!tr) return; const l = legAt(+tr.dataset.id); if (!l) return;
