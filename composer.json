@@ -32,7 +32,7 @@
     "test": "phpunit",
     "serve": [
       "Composer\\Config::disableProcessTimeout",
-      "php -S 0.0.0.0:8080 -t public public/router.php"
+      "PHP_CLI_SERVER_WORKERS=6 php -S 0.0.0.0:8080 -t public public/router.php"
     ]
   }
 }

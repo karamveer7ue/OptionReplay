@@ -121,6 +121,7 @@ Dhan's rolling expired-options endpoint backfills the past year; its rows come a
    ```
 
    Open http://localhost:8080 for the simulator and http://localhost:8080/admin for the admin panel.
+   The script starts PHP's built-in server with six worker processes, so a long Console run does not block the simulator.
 
 6. Collect data (see the next section).
    The simulator shows "No historical data collected yet" until the first candles arrive.
