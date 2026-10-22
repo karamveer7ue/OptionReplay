@@ -128,21 +128,54 @@ Dhan's rolling expired-options endpoint backfills the past year; its rows come a
 
 ## Collecting market data
 
-Queue the initial backfill and process it:
+### Running the collector from a local terminal
+
+Everything cron does can be run by hand from the project folder.
 
 ```bash
-php bin/fetch.php --plan      # queue spot history, contract discovery and per-contract candles
-php bin/fetch.php --loop      # process the queue until empty (hours; safe to stop and restart)
+cd /path/to/OptionReplay
+php bin/fetch.php --plan      # queue everything that is missing (safe to repeat)
+php bin/fetch.php --loop      # process the whole queue until it is empty
 ```
 
-Other commands:
+`--loop` runs for hours and prints one line per job.
+Stop it any time with Ctrl+C and start it again later; it resumes where it left off.
+To keep it running after closing the terminal:
+
+```bash
+nohup php bin/fetch.php --loop > storage/logs/fetch-loop.out 2>&1 &
+tail -f storage/logs/fetch-loop.out      # watch progress
+php bin/fetch.php --status               # queue counts at any time
+```
+
+To do exactly what the two cron entries do, run them by hand:
+
+```bash
+php bin/fetch.php --run --budget=50      # one cron tick: 50 seconds of work, then exit
+php bin/fetch.php --refresh              # the after-close job: today's candles plus contract discovery
+```
+
+Things to know:
+
+- Only one fetcher runs at a time.
+  While `--loop` is running, the admin Console's `run` button reports "Another fetcher is running".
+- The first backfill of three indices is roughly 12,000 jobs, around 10 hours at the default pacing of one request every 2.5 seconds.
+- Run `--refresh` after each market close so new days arrive.
+  Kotak publishes option candles with a lag, so a day may only become complete the following evening.
+- The same commands are available in Admin → Console with live output in the browser.
+
+### All commands
 
 ```bash
 php bin/fetch.php --status                 # queue counts
+php bin/fetch.php --plan                   # queue spot history, contract discovery and per-contract candles
 php bin/fetch.php --run --budget=50        # process jobs for 50 seconds then exit (cron friendly)
+php bin/fetch.php --loop                   # process until the queue is empty
 php bin/fetch.php --refresh                # queue today's candles for every live contract and re-run discovery
 php bin/fetch.php --plan-dhan              # queue the expired-options backfill via Dhan
-php bin/fetch.php --plan --underlying=NIFTY
+php bin/fetch.php --plan --underlying=NIFTY   # any command can be limited to one underlying
+php bin/fetch.php --refresh --today=2026-10-21 # plan as of a given date
+php bin/fetch.php --run --quiet            # no output (for cron)
 ```
 
 What gets fetched, with defaults editable in Admin → Settings:
