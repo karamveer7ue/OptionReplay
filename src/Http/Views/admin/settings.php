@@ -8,7 +8,7 @@
     <label>Lookback period (days)<input name="lookback_days" type="number" min="1" value="<?= View::e($v['lookback_days']) ?>"><small>How far back to fetch. Kotak only serves live contracts; expired contracts come from the Dhan backfill.</small></label>
     <label>Strike band (± strikes around ATM)<input name="strike_band" type="number" min="1" value="<?= View::e($v['strike_band']) ?>"></label>
     <label>Expiry window (days ahead)<input name="expiry_window_days" type="number" min="1" value="<?= View::e($v['expiry_window_days']) ?>"></label>
-    <label>Delay between requests (ms)<input name="fetch_delay_ms" type="number" min="500" step="100" value="<?= View::e($v['fetch_delay_ms']) ?>"><small>Kotak throttles fast clients. 2000 to 3000 ms is safe.</small></label>
+    <label>Delay between requests (ms)<input name="fetch_delay_ms" type="number" min="500" step="100" value="<?= View::e($v['fetch_delay_ms']) ?>"><small>Kotak allows about one request per second: 1000 ms measured safe, 500 ms gets throttled. The runner backs off automatically on HTTP 429.</small></label>
     <label>Time budget per run (seconds)<input name="fetch_time_budget_sec" type="number" min="10" max="3600" value="<?= View::e($v['fetch_time_budget_sec']) ?>"><small>Each cron tick processes jobs for this long, then exits.</small></label>
   </div>
 </section>

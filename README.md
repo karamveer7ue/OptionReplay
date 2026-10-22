@@ -159,7 +159,7 @@ Things to know:
 
 - Only one fetcher runs at a time.
   While `--loop` is running, the admin Console's `run` button reports "Another fetcher is running".
-- The first backfill of three indices is roughly 12,000 jobs, around 10 hours at the default pacing of one request every 2.5 seconds.
+- The first backfill of three indices is roughly 12,000 jobs, around 4 hours at the default pacing of one request per second.
 - Run `--refresh` after each market close so new days arrive.
   Kotak publishes option candles with a lag, so a day may only become complete the following evening.
 - The same commands are available in Admin → Console with live output in the browser.
@@ -185,7 +185,7 @@ What gets fetched, with defaults editable in Admin → Settings:
 | Lookback period | 365 days | How far back spot and backfill data should go |
 | Strike band | ±25 strikes | Strikes around ATM to track per expiry |
 | Expiry window | 60 days | Expiries ahead of today to track |
-| Delay between requests | 2500 ms | Kotak throttles fast clients |
+| Delay between requests | 1000 ms | Kotak allows about one request per second; 500 ms gets throttled (HTTP 429), and the runner backs off automatically |
 | Time budget per run | 50 s | How long one `--run` processes jobs |
 
 Sizing: with the defaults, three indices produce roughly 3,000 live contracts and about 12,000 jobs for the first backfill, around 10 hours at the default pacing.
@@ -330,7 +330,7 @@ Global numbers, all editable:
 | Data collection | Lookback period (days) | How far back spot history and the Dhan backfill go. |
 | | Strike band (± strikes) | Strikes around ATM tracked per expiry. The Dhan backfill uses at most ±10. |
 | | Expiry window (days ahead) | Expiries tracked beyond today. |
-| | Delay between requests (ms) | Pause between broker calls; 2000 to 3000 ms is safe for Kotak. |
+| | Delay between requests (ms) | Pause between broker calls; about 1000 ms is the measured limit for Kotak, faster gets throttled. |
 | | Time budget per run (s) | How long one cron tick or Console run processes jobs. |
 | Pricing | Risk-free rate | Used for implied volatility, Greeks and the synthetic futures price. |
 | Charges | Brokerage per order, STT, exchange transaction, SEBI fee, stamp duty, GST | Rates used by the simulator's "Include charges" toggle. |

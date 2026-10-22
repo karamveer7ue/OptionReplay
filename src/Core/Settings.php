@@ -15,7 +15,7 @@ final class Settings
         'lookback_days' => '365',
         'strike_band' => '25',
         'expiry_window_days' => '60',
-        'fetch_delay_ms' => '2500',
+        'fetch_delay_ms' => '1000',
         'fetch_time_budget_sec' => '50',
         'risk_free_rate' => '0.065',
         'brokerage_per_order' => '20',
