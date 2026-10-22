@@ -1,0 +1,9 @@
+# Apache / cPanel: route everything that is not a real file through index.php
+Options -Indexes
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
+<FilesMatch "\.(css|js|svg|png|woff2?)$">
+  Header set Cache-Control "public, max-age=604800"
+</FilesMatch>
