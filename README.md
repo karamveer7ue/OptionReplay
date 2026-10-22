@@ -180,20 +180,141 @@ Each job fetches one strike offset (ATM ±10) for one side and one expiry type o
 
 ## Admin panel
 
-`/admin`, email and password login, session cookie, CSRF-protected forms.
+The admin backend lives at `/admin`.
+It is where you decide what data is collected, watch it arrive, run the collector by hand, and tune the numbers the simulator uses.
+Public users never see it.
 
-- **Dashboard**: data coverage per underlying, job counts, recent fetch runs, database size, cron snippet.
-- **Console**: run any fetcher command once from the browser (`status`, `plan`, `refresh`, `plan-dhan`, `run` with a time budget) and watch its output stream into the page.
-  Handy for testing locally and on hosts without shell access.
-- **Data jobs**: queue a backfill, today's refresh or the Dhan backfill; run the queue for 60 seconds from the browser (useful on hosts without shell access); retry failed jobs; clear finished ones; filter by status; see errors.
-- **Underlyings**: add, edit, disable or delete underlyings.
-  A new underlying needs its Kotak symbol (`pSymbolName` in the scrip master), F&O exchange segment, and the spot `neosymbol` (for example `nse_cm|Nifty 50`, or `nse_cm|<token>` for a stock).
-  Lot size and strike step refresh automatically from the option chain.
-  Per-underlying overrides for lookback, band and expiry window are optional.
-- **Holidays**: the exchange holiday list used by the time stepper and expiry rules.
-  Weekdays not listed are treated as trading days.
-- **Settings**: collection parameters, risk-free rate, charge rates, site name, default underlying.
-- **Account**: change password.
+### Signing in
+
+- Create the first admin with `php bin/seed-admin.php you@example.com` (prints a generated password) or `php bin/seed-admin.php you@example.com 'your-password'`.
+- Running the same command again for an existing email resets that admin's password.
+- Sign in at `/admin/login`.
+  Sessions use an HTTP-only cookie named `optsim_admin`; every form carries a CSRF token.
+- Change your password under **Account** (minimum 10 characters, current password required).
+- Use `localhost` or `127.0.0.1` locally, not `0.0.0.0`: browsers refuse cookies on that address and the login appears to fail.
+
+### Dashboard
+
+A read-only overview of the system.
+
+| Block | What it shows |
+|---|---|
+| Job counters | Pending, running, done, empty and failed jobs. Each counter links to the filtered job list. |
+| Data coverage | Per underlying: lot size and strike step, number of 1-minute spot rows and their date range, contracts known (and how many are still live), 1-minute option rows and their date range, pending and failed jobs. |
+| Recent fetch runs | The last 10 runs with trigger (cli, cron, manual), jobs ok and failed, requests made and rows written. |
+| Cron setup | The two cron lines to install on the server. |
+| Header | Database size and whether the Dhan backfill is configured. |
+
+Use it to answer "how far back can the simulator go for SENSEX?" or "did last night's refresh run?".
+
+### Console
+
+Runs any collector command once, from the browser, and streams its output into the page while it works.
+This is the easiest way to test the pipeline locally or on a host without shell access.
+
+| Button | Equivalent CLI | What it does |
+|---|---|---|
+| `status` | `php bin/fetch.php --status` | Prints the queue counters. |
+| `plan` | `--plan` | Queues the initial backfill: spot history for the lookback period, a discovery job per underlying, and per-contract candle jobs. Idempotent. |
+| `refresh` | `--refresh` | Queues today's candles for every live contract plus a fresh discovery. Run after market close. |
+| `plan-dhan` | `--plan-dhan` | Queues the expired-options backfill. Disabled until `DHAN_CLIENT_ID` and `DHAN_ACCESS_TOKEN` are in `.env`. |
+| `run (process jobs)` | `--run --budget=N` | Processes queued jobs for N seconds, then stops. |
+
+Options above the buttons:
+
+- **Underlying**: restrict the command to one symbol, or leave as "all enabled".
+- **Run budget (seconds)**: how long `run` keeps going (5 to 600). The page keeps streaming until the budget is spent.
+- **As of date**: the planning date, normally today. Useful to re-plan as of an earlier date.
+
+Only one collector can run at a time.
+If a cron run or a `--loop` process holds the lock, the Console reports "Another fetcher is running; nothing started" instead of starting a second one.
+
+### Data jobs
+
+The job queue itself.
+
+Actions at the top:
+
+- **Queue backfill**: same as the Console's `plan`.
+- **Queue Dhan backfill**: same as `plan-dhan`.
+- **Queue today's refresh**: same as `refresh`.
+- **Run for 60s now**: processes jobs for one minute (disabled while another fetcher is running).
+- **Retry failed**: resets all failed jobs to pending with their attempt counter cleared.
+- **Clear finished**: deletes job records in done or empty state to keep the table small. Candle data is not touched.
+
+The table lists up to 200 jobs, running and failed first.
+Filter tabs select a status.
+Each row shows the job kind, underlying, contract, date range, priority (lower runs first), status, attempts, rows written, the last error message, and when it was last updated.
+A pending job with an "after" time is waiting out a back-off after a rate limit or an error.
+
+Job kinds:
+
+| Kind | Meaning |
+|---|---|
+| `spot_1m`, `spot_1d` | Index spot candles, one job per window. |
+| `discover` | Calls the broker for expiries and option chains, registers contracts, queues their candle jobs. |
+| `inst_1m`, `inst_1d` | Candles for one contract and one window. |
+| `dhan_backfill` | One Dhan request: one strike offset, one side, one expiry type, one 30-day window. |
+
+A job fails permanently after 4 attempts; use **Retry failed** once the cause is fixed.
+"Empty" means the broker answered with no candles, which is normal for illiquid far strikes.
+
+### Underlyings
+
+Add, edit, disable or delete the indices and stocks that are collected and offered in the simulator.
+
+| Field | Meaning |
+|---|---|
+| Symbol | Kotak's `pSymbolName`, e.g. `NIFTY`, `BANKNIFTY`, `SENSEX`, `RELIANCE`. |
+| Display name | Shown in the admin. |
+| Kind | Index or stock. |
+| F&O exchange | `nse_fo` or `bse_fo`. |
+| Spot neosymbol | Kotak `segment|token` for the spot series, e.g. `nse_cm|Nifty 50`, `nse_cm|Nifty Bank`, `bse_cm|SENSEX`, or `nse_cm|2885` for a stock token from the scrip master. |
+| Lot size, strike step | Refreshed automatically by discovery; the initial values are only a starting point. |
+| Sort order | Order of the switcher in the simulator. |
+| Lookback / strike band / expiry window overrides | Per-underlying values; blank means use the global settings. |
+| Weekly expiry weekday, monthly expiry weekday | Used to resolve expiries for past dates during the Dhan backfill (e.g. NIFTY: Tuesday and Tuesday; SENSEX: Thursday and Thursday; BANKNIFTY: none and Tuesday). |
+| Dhan segment, Dhan security id | The underlying's id in Dhan's instrument list (`NSE_FNO` 13 for NIFTY, 25 for BANKNIFTY; `BSE_FNO` 51 for SENSEX). |
+| Enabled | Disabled underlyings are neither collected nor shown. |
+
+Adding an underlying does not fetch anything by itself: queue a backfill afterwards from the Console or Data jobs.
+**Delete** removes the underlying together with all its contracts, candles and jobs, after a confirmation.
+
+### Holidays
+
+The exchange holiday calendar.
+Weekdays not listed here are treated as trading days by the time stepper, the expiry rules and the data-range clamps.
+Add a date with an optional description, or remove one.
+NSE holidays for 2025 and 2026 are seeded; add the next year's list when the exchange publishes it.
+
+### Settings
+
+Global numbers, all editable:
+
+| Group | Setting | Effect |
+|---|---|---|
+| Data collection | Lookback period (days) | How far back spot history and the Dhan backfill go. |
+| | Strike band (± strikes) | Strikes around ATM tracked per expiry. The Dhan backfill uses at most ±10. |
+| | Expiry window (days ahead) | Expiries tracked beyond today. |
+| | Delay between requests (ms) | Pause between broker calls; 2000 to 3000 ms is safe for Kotak. |
+| | Time budget per run (s) | How long one cron tick or Console run processes jobs. |
+| Pricing | Risk-free rate | Used for implied volatility, Greeks and the synthetic futures price. |
+| Charges | Brokerage per order, STT, exchange transaction, SEBI fee, stamp duty, GST | Rates used by the simulator's "Include charges" toggle. |
+| Site | Site name, default underlying | Branding and the underlying selected on first visit. |
+
+Changes apply immediately to new simulator requests; collection settings apply to jobs queued after the change.
+
+### Account
+
+Shows the signed-in email and lets the admin change their password.
+To add another admin, run `php bin/seed-admin.php other@example.com` on the server.
+
+### Typical workflows
+
+- **First setup**: Underlyings (check the three presets) → Settings (lookback, band, delay) → Console `plan` → Console `run` a few times or let cron work → Dashboard to watch coverage grow.
+- **Daily**: cron runs `--run` every minute and `--refresh` after the close. Check Dashboard for failed jobs; use Data jobs → Retry failed if the broker had an outage.
+- **Add a stock**: Underlyings → fill symbol, `nse_fo`, spot neosymbol from the scrip master → Save → Console `plan` restricted to that symbol.
+- **Backfill a year of expired options**: add Dhan credentials to `.env` → check Dhan ids and expiry weekdays per underlying → Console `plan-dhan` → run the queue.
 
 ## Deploying to shared hosting
 
