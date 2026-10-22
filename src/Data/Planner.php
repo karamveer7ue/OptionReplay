@@ -18,6 +18,8 @@ use App\Data\Sources\MarketDataSource;
  */
 final class Planner
 {
+    public const CHUNK_EPOCH = '2020-01-01';
+
     public function __construct(private readonly MarketDataSource $source)
     {
     }
@@ -161,21 +163,28 @@ final class Planner
         return $created;
     }
 
-    /** @return array<int,array{0:string,1:string}> inclusive [from,to] windows of at most $maxDays calendar days */
+    /**
+     * Inclusive [from,to] windows of at most $maxDays calendar days, aligned to fixed boundaries counted
+     * from a constant epoch, so re-planning on a later date reproduces the same windows (and therefore the
+     * same idempotent job keys) and only the newest, still-open window is fetched again.
+     * @return array<int,array{0:string,1:string}>
+     */
     public function chunks(string $from, string $to, int $maxDays): array
     {
         $out = [];
-        $cursor = new \DateTimeImmutable($from);
+        $start = new \DateTimeImmutable($from);
         $end = new \DateTimeImmutable($to);
-        if ($cursor > $end) {
+        if ($start > $end) {
             return [];
         }
+        $epoch = new \DateTimeImmutable(self::CHUNK_EPOCH);
+        $offset = (int) $epoch->diff($start)->days;
+        $cursor = $epoch->modify('+' . (intdiv($offset, $maxDays) * $maxDays) . ' days');
         while ($cursor <= $end) {
             $chunkEnd = $cursor->modify('+' . ($maxDays - 1) . ' days');
-            if ($chunkEnd > $end) {
-                $chunkEnd = $end;
-            }
-            $out[] = [$cursor->format('Y-m-d'), $chunkEnd->format('Y-m-d')];
+            $a = $cursor < $start ? $start : $cursor;
+            $b = $chunkEnd > $end ? $end : $chunkEnd;
+            $out[] = [$a->format('Y-m-d'), $b->format('Y-m-d')];
             $cursor = $chunkEnd->modify('+1 day');
         }
         return $out;

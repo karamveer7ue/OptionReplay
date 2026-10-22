@@ -36,6 +36,16 @@ final class PlannerChunksTest extends TestCase
         }
     }
 
+    public function testWindowsAreStableWhenReplannedLater(): void
+    {
+        $p = $this->planner();
+        $a = $p->chunks('2025-10-21', '2026-10-21', 30);
+        $b = $p->chunks('2025-10-22', '2026-10-22', 30);
+        // All fully-covered interior windows are identical; only the first (clipped) and last (open) differ.
+        $this->assertSame(array_slice($a, 1, -1), array_slice($b, 1, -1));
+        $this->assertSame($b[0][1], $a[0][1]);
+    }
+
     public function testSingleDayRange(): void
     {
         $this->assertSame([['2026-10-21', '2026-10-21']], $this->planner()->chunks('2026-10-21', '2026-10-21', 30));

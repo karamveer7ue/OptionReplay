@@ -165,7 +165,8 @@ Daily operation after the first backfill:
 30 16 * * 1-5  cd /path/to/app && php bin/fetch.php --refresh --quiet
 ```
 
-The runner holds a lock file, so overlapping cron ticks are harmless.
+The runner holds a lock file, so overlapping cron ticks are harmless, and a run started from the admin Console waits its turn the same way.
+Fetch windows are aligned to fixed 30-day boundaries, so re-running `--plan` on a later day only adds the newest window instead of re-fetching history.
 
 ### Backfilling expired contracts with Dhan
 
@@ -182,6 +183,8 @@ Each job fetches one strike offset (ATM ±10) for one side and one expiry type o
 `/admin`, email and password login, session cookie, CSRF-protected forms.
 
 - **Dashboard**: data coverage per underlying, job counts, recent fetch runs, database size, cron snippet.
+- **Console**: run any fetcher command once from the browser (`status`, `plan`, `refresh`, `plan-dhan`, `run` with a time budget) and watch its output stream into the page.
+  Handy for testing locally and on hosts without shell access.
 - **Data jobs**: queue a backfill, today's refresh or the Dhan backfill; run the queue for 60 seconds from the browser (useful on hosts without shell access); retry failed jobs; clear finished ones; filter by status; see errors.
 - **Underlyings**: add, edit, disable or delete underlyings.
   A new underlying needs its Kotak symbol (`pSymbolName` in the scrip master), F&O exchange segment, and the spot `neosymbol` (for example `nse_cm|Nifty 50`, or `nse_cm|<token>` for a stock).

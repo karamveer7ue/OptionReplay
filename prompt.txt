@@ -1,0 +1,15 @@
+I want to create an option strategy simulator where a user can create a strategy from the option chain displayed on the page or from the list of ready made strategies (shown as images) and run it on the past data, for an index or share.
+A basic version of this is available at https://stockmojo.in/simulator for you to see.I have attached a screenshot of the webpage, if you cannot access that URL, to understand it's working.Do not copy this website or its design as it is. Make a much better looking, better working, more customized version of the option strategy simulator
+We want to do it initially for NIFTY, SENSEX and BANKNIFTY (only 3 indices to start with). We will NOT provide the option of +1 or -1 minute. We will only provide the option of +-5min, +-15min, +-1hr, EOD, +-1day. to jump ahead or back. 
+Tech: This should be created in PHP and MYSQL. It will be hosted on a website later on, but will be extensively tested locally first.
+We need to fetch and store the historic data for these 3 indices into our database,for the last 1 year (customizable from the admin backend) from Kotak NEO APIs. You need to fetch it with some delay in between the queries as they block fast queries. 
+Kotak NEO API details are available at https://github.com/Kotak-Neo/kotak-neo-python. I have created and saved a .env file with actual details required to fetch the data. If OTP is required to do the historic data fetch, ask me on command prompt (only if it is required).
+This website will be offered for users to be used for free initially (without login to start with, later on we will create user logins). Do create an admin backend, with email/password, to add more shares/indexes to fetch the historic data, time period (default: 1 year) and other features.
+Ask me as many questions as you like before proceeding.
+
+----
+
+Create detailed README.md file explaining how it all works and can a user install and run it. Then create a new public repository called OptionReplay and commit it to it.
+
+----
+

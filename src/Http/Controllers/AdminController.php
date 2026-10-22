@@ -226,6 +226,72 @@ final class AdminController
         return Response::redirect('/admin/jobs?flash=' . urlencode("Removed {$n} finished job(s)"));
     }
 
+    public function console(): Response
+    {
+        $this->guard();
+        return $this->page('admin/console', [
+            'commands' => \App\Data\FetchCommands::COMMANDS,
+            'budget' => \App\Data\FetchCommands::defaultBudget(),
+            'underlyings' => Database::all('SELECT symbol FROM underlyings WHERE enabled = 1 ORDER BY sort_order'),
+            'counts' => JobQueue::counts(),
+            'lockHeld' => $this->lockHeld(),
+            'dhan' => \App\Data\Sources\DhanClient::configured(),
+        ]);
+    }
+
+    /** Runs one fetcher command in-process and streams its output into the page as it happens. */
+    public function consoleRun(): Response
+    {
+        $this->guard();
+        Auth::checkCsrf();
+        $command = (string) Request::post('command');
+        if (!isset(\App\Data\FetchCommands::COMMANDS[$command])) {
+            throw new HttpException('Unknown command', 400);
+        }
+        $budget = max(5, min(600, (int) (Request::post('budget') ?: \App\Data\FetchCommands::defaultBudget())));
+        $symbol = Request::post('underlying') ?: null;
+        $today = Request::post('today') ?: date('Y-m-d');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $today)) {
+            throw new HttpException('Invalid date', 422);
+        }
+        session_write_close();
+        set_time_limit($budget + 60);
+        ignore_user_abort(true);
+        // Stream: headers and page head first, then one line per message.
+        http_response_code(200);
+        header('Content-Type: text/html; charset=utf-8');
+        header('X-Accel-Buffering: no');
+        header('Cache-Control: no-cache');
+        while (ob_get_level() > 0) {
+            ob_end_flush();
+        }
+        $label = $command . ($command === 'run' ? " (budget {$budget}s)" : '') . ($symbol ? " for {$symbol}" : '');
+        echo View::render('admin/console-run', ['label' => $label, 'siteName' => Settings::get('site_name'), 'head' => true]);
+        echo str_repeat(' ', 1024);
+        flush();
+        $say = static function (string $m): void {
+            echo '<div class="line"><span class="t">' . date('H:i:s') . '</span>' . View::e($m) . "</div>\n";
+            flush();
+        };
+        $started = microtime(true);
+        try {
+            $cmd = new \App\Data\FetchCommands(\App\Data\FetchCommands::source(), $say, $today);
+            match ($command) {
+                'status' => $cmd->status(),
+                'plan' => $cmd->plan($symbol),
+                'refresh' => $cmd->refresh($symbol),
+                'plan-dhan' => $cmd->planDhan($symbol),
+                'run' => $cmd->run($budget, false, 'manual'),
+            };
+            $say(sprintf('Done in %.1fs', microtime(true) - $started));
+        } catch (\Throwable $e) {
+            echo '<div class="line err"><span class="t">' . date('H:i:s') . '</span>' . View::e('Error: ' . $e->getMessage()) . "</div>\n";
+        }
+        echo View::render('admin/console-run', ['label' => $label, 'siteName' => Settings::get('site_name'), 'head' => false]);
+        flush();
+        exit;
+    }
+
     public function holidays(): Response
     {
         $this->guard();

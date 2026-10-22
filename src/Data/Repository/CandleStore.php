@@ -16,6 +16,12 @@ final class CandleStore
         return (int) round($rupees * 100);
     }
 
+    /** Brokers occasionally send negative volume/OI on correction prints; store them as zero. */
+    private static function count(?int $v): ?int
+    {
+        return $v === null ? null : max(0, $v);
+    }
+
     /** @param Candle[] $candles */
     public static function saveInstrument1m(int $instrumentId, array $candles, bool $overwrite = true): int
     {
@@ -24,7 +30,7 @@ final class CandleStore
             '(?,?,?,?,?,?,?,?)',
             $overwrite ? ' ON DUPLICATE KEY UPDATE o=VALUES(o), h=VALUES(h), l=VALUES(l), c=VALUES(c), volume=VALUES(volume), oi=COALESCE(VALUES(oi), oi)' : '',
             $candles,
-            fn (Candle $c) => [$instrumentId, $c->ts->format('Y-m-d H:i:s'), self::paise($c->open), self::paise($c->high), self::paise($c->low), self::paise($c->close), $c->volume, $c->oi],
+            fn (Candle $c) => [$instrumentId, $c->ts->format('Y-m-d H:i:s'), self::paise($c->open), self::paise($c->high), self::paise($c->low), self::paise($c->close), self::count($c->volume), self::count($c->oi)],
         );
     }
 
@@ -36,7 +42,7 @@ final class CandleStore
             '(?,?,?,?,?,?,?,?)',
             ' ON DUPLICATE KEY UPDATE o=VALUES(o), h=VALUES(h), l=VALUES(l), c=VALUES(c), volume=VALUES(volume), oi=COALESCE(VALUES(oi), oi)',
             $candles,
-            fn (Candle $c) => [$instrumentId, $c->ts->format('Y-m-d'), self::paise($c->open), self::paise($c->high), self::paise($c->low), self::paise($c->close), $c->volume, $c->oi],
+            fn (Candle $c) => [$instrumentId, $c->ts->format('Y-m-d'), self::paise($c->open), self::paise($c->high), self::paise($c->low), self::paise($c->close), self::count($c->volume), self::count($c->oi)],
         );
     }
 
@@ -60,7 +66,7 @@ final class CandleStore
             '(?,?,?,?,?,?,?)',
             ' ON DUPLICATE KEY UPDATE o=VALUES(o), h=VALUES(h), l=VALUES(l), c=VALUES(c), volume=VALUES(volume)',
             $candles,
-            fn (Candle $c) => [$underlyingId, $c->ts->format('Y-m-d'), self::paise($c->open), self::paise($c->high), self::paise($c->low), self::paise($c->close), $c->volume],
+            fn (Candle $c) => [$underlyingId, $c->ts->format('Y-m-d'), self::paise($c->open), self::paise($c->high), self::paise($c->low), self::paise($c->close), self::count($c->volume)],
         );
     }
 

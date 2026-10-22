@@ -399,7 +399,13 @@
     try { const r = await api('/api/step', { at: S.at, step: s }); const max = S.snap.range.max?.replace(' ', 'T').slice(0, 16), min = S.snap.range.min?.replace(' ', 'T').slice(0, 16); if (max && r.at > max) { toast('Reached the latest available data'); stopAutoplay(); return false; } if (min && r.at < min) { toast('Reached the earliest available data'); return false; } S.at = r.at; await load(); return true; } catch (e) { toast(e.message); return false; }
   }
   document.querySelectorAll('.step').forEach((b) => { b.onclick = () => step(b.dataset.step); });
-  $('time-input').addEventListener('change', (e) => { if (e.target.value) { S.at = e.target.value; load(); } });
+  // Picking a different date starts that day at the market open (09:15); changing only the time keeps the date.
+  $('time-input').addEventListener('change', (e) => {
+    const v = e.target.value; if (!v) return;
+    const dateChanged = v.slice(0, 10) !== (S.at || '').slice(0, 10);
+    S.at = dateChanged ? v.slice(0, 10) + 'T09:15' : v;
+    load();
+  });
   function stopAutoplay() { if (S.autoplay) { clearInterval(S.autoplay); S.autoplay = null; $('autoplay-btn').textContent = '▶ Autoplay'; $('autoplay-btn').classList.remove('playing'); } }
   $('autoplay-btn').onclick = () => {
     if (S.autoplay) { stopAutoplay(); return; }
