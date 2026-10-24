@@ -39,12 +39,14 @@ final class ApiController
         $u = $this->underlying();
         $t = TradingCalendar::normalise(Request::time('at'));
         $spot = MarketData::spot((int) $u['id'], $t);
+        $expiries = MarketData::expiries((int) $u['id'], $t);
         return Response::json([
             'at' => $t->format('Y-m-d\TH:i'),
             'is_trading_day' => TradingCalendar::isTradingDay($t),
             'spot' => $spot,
             'future' => MarketData::future($u, $t, $spot['ltp']),
-            'expiries' => MarketData::expiries((int) $u['id'], $t),
+            'expiries' => $expiries,
+            'moves' => MarketData::expectedMoves($u, $t, $spot['ltp'], $expiries),
             'range' => MarketData::dataRange((int) $u['id']),
             'lot_size' => (int) $u['lot_size'],
             'strike_step' => (float) $u['strike_step'],

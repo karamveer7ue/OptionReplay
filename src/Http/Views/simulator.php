@@ -53,6 +53,7 @@
       <div class="mkt"><span class="mkt-label">Spot</span><span class="mkt-value" id="spot-value">–</span><span class="mkt-change" id="spot-change"></span></div>
       <div class="mkt"><span class="mkt-label">Future <small id="fut-expiry"></small></span><span class="mkt-value" id="fut-value">–</span><span class="mkt-note" id="fut-note"></span></div>
       <div class="mkt"><span class="mkt-label">Lot</span><span class="mkt-value" id="lot-value">–</span></div>
+      <div class="mkt"><span class="mkt-label">1σ move <small>weekly · monthly</small></span><span class="mkt-value mkt-sd" id="sd-value">–</span><span class="mkt-note" id="sd-note"></span></div>
       <div class="mkt mkt-right"><span class="mkt-label">Data</span><span class="mkt-note" id="data-range">–</span></div>
     </div>
     <div class="expiry-tabs" id="expiry-tabs"></div>
@@ -82,6 +83,8 @@
         <div class="payoff-controls">
           <label class="check small"><input type="checkbox" id="payoff-t0" checked> T+0 curve</label>
           <label class="check small"><input type="checkbox" id="charges-toggle"> Include charges</label>
+          <label class="check small" title="Expected move to the weekly expiry: ±1σ and ±2σ from ATM implied volatility"><input type="checkbox" id="sd-weekly" checked> σ weekly</label>
+          <label class="check small" title="Expected move to the monthly expiry: ±1σ and ±2σ from ATM implied volatility"><input type="checkbox" id="sd-monthly" checked> σ monthly</label>
           <label class="small">Range ±<input type="number" id="payoff-range" value="8" min="2" max="40" step="1" class="tiny">%</label>
           <button class="btn btn-sm" id="payoff-reset" hidden title="Double-click the chart also resets">Reset zoom</button>
           <span class="muted small zoom-hint">Drag on the chart to zoom</span>
@@ -96,7 +99,7 @@
     <div class="view" id="view-spot" hidden>
       <div class="spot-head">
         <div class="tabs small-tabs" id="spot-interval"><button data-i="1m">1m</button><button data-i="5m" class="active">5m</button><button data-i="15m">15m</button><button data-i="1h">1h</button><button data-i="1d">1D</button></div>
-        <span class="muted small">Candles up to the current simulation time. Leg entries are marked.</span>
+        <span class="muted small">Candles up to the current simulation time. Leg entries are marked; dashed lines are ±1σ and ±2σ expected moves (W weekly, M monthly).</span>
       </div>
       <div id="spot-chart" class="tv-chart"></div>
     </div>

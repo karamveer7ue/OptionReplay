@@ -117,11 +117,11 @@ body.sim { display: flex; flex-direction: column; height: 100vh; overflow: hidde
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
 /* chain */
-.market-strip { display: flex; gap: 22px; padding: 10px 16px; border-bottom: 1px solid var(--line); align-items: center; }
+.market-strip { display: flex; gap: 18px; padding: 10px 16px; border-bottom: 1px solid var(--line); align-items: center; overflow-x: auto; scrollbar-width: none; }
 .mkt { display: flex; flex-direction: column; } .mkt-right { margin-left: auto; align-items: flex-end; }
 .mkt-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; } .mkt-label small { text-transform: none; letter-spacing: 0; margin-left: 4px; }
 .mkt-value { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.mkt-change { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; } .mkt-note { font-size: 11px; color: var(--muted); }
+.mkt-change { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; } .mkt-note { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .expiry-tabs { display: flex; gap: 6px; padding: 10px 16px 6px; overflow-x: auto; scrollbar-width: thin; }
 .expiry-tabs button { font: inherit; font-size: 12px; font-weight: 600; border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); padding: 5px 11px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
 .expiry-tabs button.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
@@ -173,6 +173,12 @@ body.sim { display: flex; flex-direction: column; height: 100vh; overflow: hidde
 .chart .t0-line { stroke: var(--accent); stroke-width: 1.6; fill: none; }
 .chart .profit { fill: var(--green-fill); } .chart .loss { fill: var(--red-fill); }
 .chart .be { stroke: var(--amber); stroke-dasharray: 2 2; } .chart .be-label { fill: var(--amber); font-weight: 600; }
+.chart .sd { stroke-dasharray: 5 4; stroke-width: 1; } .chart .sd.sd2 { stroke-dasharray: 2 4; opacity: .8; }
+.chart .sd-weekly { stroke: #b45309; } .chart .sd-monthly { stroke: #7c3aed; }
+.chart .sd-label { font-size: 10px; font-weight: 600; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; stroke-linejoin: round; } .chart .sd-label.sd-weekly { fill: #b45309; } .chart .sd-label.sd-monthly { fill: #7c3aed; }
+:root[data-theme="dark"] .chart .sd-weekly, :root[data-theme="dark"] .chart .sd-label.sd-weekly { stroke: #fbbf24; fill: #fbbf24; }
+:root[data-theme="dark"] .chart .sd-monthly, :root[data-theme="dark"] .chart .sd-label.sd-monthly { stroke: #c4b5fd; fill: #c4b5fd; }
+.mkt-sd { font-size: 14px; }
 .chart .pnl-line { stroke: var(--text); stroke-width: 1.8; fill: none; } .chart .pnl-area-pos { fill: var(--green-fill); } .chart .pnl-area-neg { fill: var(--red-fill); }
 .chart .cursor { stroke: var(--muted); stroke-dasharray: 2 2; }
 .chart .select-rect { fill: var(--accent); fill-opacity: .12; stroke: var(--accent); stroke-width: 1; }

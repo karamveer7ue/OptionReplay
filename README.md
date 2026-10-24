@@ -38,6 +38,7 @@ It runs on a laptop with the PHP built-in server and deploys to ordinary shared 
 - **Payoff chart** with the expiry line, the T+0 curve (Black-Scholes valued with each leg's implied volatility), profit and loss shading, breakevens, max profit and max loss, and an optional charges toggle (brokerage, STT, exchange fees, SEBI fee, stamp duty, GST).
 - **P&L over time** chart, marked-to-market from the first leg's entry to the current time.
 - **Spot chart** (candlesticks at 1m, 5m, 15m, 1h, 1D) with leg entries marked.
+- **Expected-move bands**: ±1σ and ±2σ to the weekly and to the monthly expiry, from the at-the-money implied volatility at the replay time, shown on the payoff chart, as price lines on the spot chart, and as numbers in the market strip. Each can be toggled.
 - **Greeks** per leg and for the whole strategy: delta, gamma, theta per day, vega.
 - **Save and share** strategies: saved in the browser, or shared as a URL that encodes every leg and the simulation time.
 - **Light and dark themes.**

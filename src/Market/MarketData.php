@@ -224,6 +224,75 @@ final class MarketData
         return ['atm' => $atm, 'rows' => array_values($byStrike), 'lot_size' => $lot ?: (int) $u['lot_size']];
     }
 
+    /**
+     * Expected move (standard deviation of the spot) to the nearest weekly and the monthly expiry,
+     * from the at-the-money implied volatility at $t: sd = spot * iv * sqrt(T).
+     * @param array<int,array<string,mixed>> $expiries from self::expiries()
+     * @return array<string,array<string,mixed>|null> ['weekly' => {...}, 'monthly' => {...}]
+     */
+    public static function expectedMoves(array $u, \DateTimeImmutable $t, ?float $spot, array $expiries): array
+    {
+        $out = ['weekly' => null, 'monthly' => null];
+        if ($spot === null || !$expiries) {
+            return $out;
+        }
+        $dates = array_column($expiries, 'expiry');
+        $lastOfMonth = [];
+        foreach ($dates as $d) {
+            $lastOfMonth[substr($d, 0, 7)] = $d;
+        }
+        // Weekly = nearest expiry. Monthly = nearest month-end expiry other than that one, so the two
+        // horizons always differ (when the nearest expiry is itself the monthly, use next month's).
+        $weekly = $dates[0];
+        $monthly = null;
+        foreach ($dates as $d) {
+            if ($d !== $weekly && $lastOfMonth[substr($d, 0, 7)] === $d) {
+                $monthly = $d;
+                break;
+            }
+        }
+        foreach (['weekly' => $weekly, 'monthly' => $monthly] as $kind => $expiry) {
+            if ($expiry === null) {
+                continue;
+            }
+            $iv = self::atmIv($u, $expiry, $t, $spot);
+            if ($iv === null) {
+                continue;
+            }
+            $tte = TradingCalendar::yearsToExpiry($t, $expiry);
+            $sd = $spot * $iv * sqrt($tte);
+            $out[$kind] = ['expiry' => $expiry, 'iv' => round($iv * 100, 2), 'sd1' => round($sd, 2), 'sd2' => round(2 * $sd, 2), 'days' => round($tte * 365, 1)];
+        }
+        return $out;
+    }
+
+    /** Average implied volatility of the ATM call and put for one expiry, or null when neither prices. */
+    public static function atmIv(array $u, string $expiry, \DateTimeImmutable $t, float $spot): ?float
+    {
+        $strike = Database::scalar(
+            "SELECT strike FROM instruments WHERE underlying_id = ? AND expiry = ? AND kind = 'CE' ORDER BY ABS(strike - ?) LIMIT 1",
+            [$u['id'], $expiry, $spot],
+        );
+        if ($strike === null) {
+            return null;
+        }
+        $insts = Database::all("SELECT id, kind FROM instruments WHERE underlying_id = ? AND expiry = ? AND strike = ? AND kind IN ('CE','PE')", [$u['id'], $expiry, $strike]);
+        $quotes = self::quotesAt(array_map(fn ($i) => (int) $i['id'], $insts), $t);
+        $tte = TradingCalendar::yearsToExpiry($t, $expiry);
+        $r = Settings::float('risk_free_rate');
+        $ivs = [];
+        foreach ($insts as $i) {
+            $q = $quotes[(int) $i['id']] ?? null;
+            if ($q) {
+                $iv = BlackScholes::impliedVol($i['kind'], $q['ltp'], $spot, (float) $strike, $tte, $r);
+                if ($iv !== null) {
+                    $ivs[] = $iv;
+                }
+            }
+        }
+        return $ivs ? array_sum($ivs) / count($ivs) : null;
+    }
+
     /** Nearest futures contract price at $t, or a synthetic one. @return array<string,mixed> */
     public static function future(array $u, \DateTimeImmutable $t, ?float $spot): array
     {

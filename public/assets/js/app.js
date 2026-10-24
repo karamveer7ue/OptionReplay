@@ -98,6 +98,10 @@
     $('fut-expiry').textContent = fut.expiry ? fmtDate(fut.expiry) : '';
     $('fut-note').textContent = fut.synthetic ? 'synthetic (spot + carry)' : (fut.stale ? 'previous close' : 'exchange');
     $('lot-value').textContent = S.snap.lot_size;
+    const mv = S.snap.moves || {};
+    const part = (k) => (mv[k] ? `±${fmtNum(mv[k].sd1)}` : '–');
+    $('sd-value').textContent = `${part('weekly')} · ${part('monthly')}`;
+    $('sd-note').textContent = [mv.weekly ? `W ${fmtDate(mv.weekly.expiry)} ${mv.weekly.iv.toFixed(1)}%` : null, mv.monthly ? `M ${fmtDate(mv.monthly.expiry)} ${mv.monthly.iv.toFixed(1)}%` : null].filter(Boolean).join(' · ');
     const r = S.snap.range; $('data-range').textContent = r.min ? `${r.min.slice(0, 10)} → ${r.max.slice(0, 16)}` : 'no data yet';
     document.querySelectorAll('.step').forEach((b) => { b.disabled = !r.max; });
   }
@@ -279,7 +283,18 @@
     const maxP = Math.max(...vals), minP = Math.min(...vals);
     const unlimitedProfit = slopeR > tol || slopeL < -tol;
     const unlimitedLoss = slopeR < -tol || slopeL > tol;
-    return { xs, expiry, t0, spot, breakevens: be, maxProfit: unlimitedProfit ? null : maxP, maxLoss: unlimitedLoss ? null : minP, target };
+    return { xs, expiry, t0, spot, breakevens: be, maxProfit: unlimitedProfit ? null : maxP, maxLoss: unlimitedLoss ? null : minP, target, bands: sdBands(spot) };
+  }
+  // Expected-move markers for the payoff chart: spot ± 1σ / 2σ for weekly (W) and monthly (M).
+  function sdBands(spot) {
+    const mv = (S.snap && S.snap.moves) || {};
+    const out = [];
+    const add = (k, tag, row) => {
+      if (!mv[k] || !$('sd-' + k).checked) return;
+      [[1, mv[k].sd1], [2, mv[k].sd2]].forEach(([n, sd]) => { out.push({ x: spot - sd, label: `-${n}σ ${tag}`, cls: `sd-${k} sd${n}`, row }); out.push({ x: spot + sd, label: `+${n}σ ${tag}`, cls: `sd-${k} sd${n}`, row }); });
+    };
+    add('weekly', 'W', 0); add('monthly', 'M', 1);
+    return out;
   }
   function renderPayoff() {
     const d = payoffData();
@@ -294,7 +309,7 @@
       + metric('Breakeven' + (d.breakevens.length > 1 ? 's' : ''), d.breakevens.length ? d.breakevens.map((b) => fmtNum(b)).join(' · ') : '–')
       + metric('Current P&L', fmtMoney(pnlNow), pnlNow >= 0 ? 'pos' : 'neg') + metric('Payoff at', fmtDate(d.target) + ' expiry');
   }
-  ['payoff-t0', 'charges-toggle', 'payoff-range'].forEach((id) => { $(id).addEventListener('change', () => { renderLegs(); renderPayoff(); }); });
+  ['payoff-t0', 'charges-toggle', 'payoff-range', 'sd-weekly', 'sd-monthly'].forEach((id) => { $(id).addEventListener('change', () => { renderLegs(); renderPayoff(); if (S.view === 'spot') loadSpotChart(); }); });
   $('payoff-range').addEventListener('input', renderPayoff);
 
   /* ---------- P&L over time ---------- */
@@ -357,7 +372,9 @@
       rightPriceScale: { borderColor: dark ? '#334155' : '#cbd5e1' }, timeScale: { borderColor: dark ? '#334155' : '#cbd5e1', timeVisible: true, secondsVisible: false },
       crosshair: { mode: 0 }, autoSize: true, localization: { timeFormatter: (t) => new Date(t * 1000).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) },
     });
-    S.spotSeries = S.spotChart.addCandlestickSeries({ upColor: '#22c55e', downColor: '#ef4444', wickUpColor: '#22c55e', wickDownColor: '#ef4444', borderVisible: false });
+    S.spotSeries = S.spotChart.addCandlestickSeries({ upColor: '#22c55e', downColor: '#ef4444', wickUpColor: '#22c55e', wickDownColor: '#ef4444', borderVisible: false,
+      // Keep the ±1σ expected-move lines inside the visible price range.
+      autoscaleInfoProvider: (original) => { const r = original(); if (!r || !S.spotExtent) return r; return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, S.spotExtent[0]), maxValue: Math.max(r.priceRange.maxValue, S.spotExtent[1]) } }; } });
   }
   async function loadSpotChart() {
     ensureSpotChart();
@@ -369,6 +386,20 @@
     const shift = 19800;
     S.spotSeries.setData(data.candles.map((c) => ({ time: c.time + shift, open: c.open, high: c.high, low: c.low, close: c.close })));
     S.spotSeries.setMarkers(S.legs.filter((l) => l.on).map((l) => ({ time: Math.floor(parseTs(l.entryAt).getTime() / 1000) + shift, position: l.side === 'B' ? 'belowBar' : 'aboveBar', color: l.side === 'B' ? '#22c55e' : '#ef4444', shape: l.side === 'B' ? 'arrowUp' : 'arrowDown', text: `${l.side} ${l.kind} ${fmtNum(l.strike)}` })).sort((a, b) => a.time - b.time));
+    (S.spotLines || []).forEach((l) => S.spotSeries.removePriceLine(l));
+    S.spotLines = [];
+    const spot = S.snap && S.snap.spot && S.snap.spot.ltp, mv = (S.snap && S.snap.moves) || {};
+    S.spotExtent = null;
+    if (spot) {
+      const sd1s = ['weekly', 'monthly'].filter((k) => mv[k] && $('sd-' + k).checked).map((k) => mv[k].sd1);
+      if (sd1s.length) S.spotExtent = [spot - Math.max(...sd1s), spot + Math.max(...sd1s)];
+      [['weekly', 'W', '#b45309'], ['monthly', 'M', '#7c3aed']].forEach(([k, tag, color]) => {
+        if (!mv[k] || !$('sd-' + k).checked) return;
+        [[1, mv[k].sd1], [2, mv[k].sd2]].forEach(([n, sd]) => [-1, 1].forEach((sg) => {
+          S.spotLines.push(S.spotSeries.createPriceLine({ price: spot + sg * sd, color, lineWidth: 1, lineStyle: n === 1 ? 2 : 3, axisLabelVisible: true, title: `${sg > 0 ? '+' : '-'}${n}σ ${tag}` }));
+        }));
+      });
+    }
     S.spotChart.timeScale().fitContent();
   }
   $('spot-interval').addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (!b) return; S.spotInterval = b.dataset.i; document.querySelectorAll('#spot-interval button').forEach((x) => x.classList.toggle('active', x === b)); loadSpotChart(); });

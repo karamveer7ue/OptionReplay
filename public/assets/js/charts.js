@@ -102,6 +102,12 @@
       lastLabelX = X(b);
       el('text', { x: X(b), y: m.t + 10 + row * 12, 'text-anchor': 'middle', class: 'be-label' }, svg).textContent = fmtNum(b);
     });
+    // Expected-move bands: [{x, label, cls}] drawn as vertical dashed lines with a label at the bottom.
+    (data.bands || []).forEach((bd) => {
+      if (bd.x < xMin || bd.x > xMax) return;
+      el('line', { x1: X(bd.x), x2: X(bd.x), y1: m.t, y2: h - m.b, class: 'sd ' + bd.cls }, svg);
+      el('text', { x: X(bd.x), y: h - m.b - 8 - (bd.row || 0) * 12, 'text-anchor': 'middle', class: 'sd-label ' + bd.cls }, svg).textContent = bd.label;
+    });
     if (data.spot >= xMin && data.spot <= xMax) {
       el('line', { x1: X(data.spot), x2: X(data.spot), y1: m.t, y2: h - m.b, class: 'spot-line' }, svg);
       el('text', { x: X(data.spot) + 4, y: h - m.b - 6, class: 'spot-label' }, svg).textContent = 'Spot ' + fmtNum(data.spot);
