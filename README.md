@@ -117,7 +117,7 @@ Dhan's rolling expired-options endpoint backfills the past year; its rows come a
 5. Start the web server:
 
    ```bash
-   composer serve
+   ./start.sh        # or: composer serve
    ```
 
    Open http://localhost:8080 for the simulator and http://localhost:8080/admin for the admin panel.
@@ -128,9 +128,26 @@ Dhan's rolling expired-options endpoint backfills the past year; its rows come a
 
 ## Collecting market data
 
+### Quick start scripts
+
+Two helper scripts cover the everyday local workflow:
+
+```bash
+./start.sh            # start the web server on port 8080, or restart it if it is already running
+./start.sh 9000       # another port
+./start.sh --stop     # stop it
+
+./fetch.sh            # queue everything missing up to now, then process the queue until it is empty
+./fetch.sh --watch    # same, then keep checking for new work every 15 minutes
+./fetch.sh --status   # queue counts
+```
+
+`fetch.sh` does the work of both cron jobs in one go: it runs `--plan` and `--refresh` to queue anything missing (including today's candles), then `--loop` until the queue is empty.
+It refuses to start if another fetcher is running and clears a stale lock left by a killed run.
+
 ### Running the collector from a local terminal
 
-Everything cron does can be run by hand from the project folder.
+Everything cron does can also be run by hand from the project folder.
 
 ```bash
 cd /path/to/OptionReplay
