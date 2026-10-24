@@ -70,6 +70,8 @@
     </div>
   </section>
 
+  <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" title="Drag to resize. Double-click to reset." tabindex="0"></div>
+
   <section class="panel strategy-panel">
     <div class="tabs view-tabs" id="view-tabs">
       <button class="active" data-view="payoff">Payoff</button>
@@ -117,10 +119,10 @@
           <button class="btn btn-sm btn-ghost" id="reset-legs">Clear</button>
         </div>
       </div>
-      <table class="table legs-table" id="legs-table">
-        <thead><tr><th></th><th>Side</th><th>Expiry</th><th>Strike</th><th>Type</th><th>Lots</th><th>Entry</th><th>Now</th><th>P&amp;L</th><th>IV</th><th>Δ</th><th>Θ</th><th></th></tr></thead>
-        <tbody id="legs-body"><tr><td colspan="13" class="muted center">No legs yet. Click a premium in the chain or pick a ready-made strategy.</td></tr></tbody>
-      </table>
+      <div class="table-wrap"><table class="table legs-table" id="legs-table">
+        <thead><tr><th></th><th>Side</th><th>Expiry</th><th>Strike</th><th>Type</th><th>Lots</th><th>Entry</th><th>Now / Exit</th><th>P&amp;L</th><th>IV</th><th>Δ</th><th>Θ</th><th></th></tr></thead>
+        <tbody id="legs-body"><tr><td colspan="13" class="muted center">No legs yet. Click a premium in the chain or pick a ready-made strategy. Use Close on a leg to book its profit or loss at any time, and keep adding legs as the replay goes on.</td></tr></tbody>
+      </table></div>
       <div class="legs-foot" id="legs-foot"></div>
     </div>
   </section>

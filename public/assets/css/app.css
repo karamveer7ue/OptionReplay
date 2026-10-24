@@ -113,7 +113,11 @@ body.sim { display: flex; flex-direction: column; height: 100vh; overflow: hidde
 .autoplay { display: flex; gap: 6px; align-items: center; } .autoplay select { padding: 6px 8px; font-size: 12px; }
 #autoplay-btn.playing { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent); }
 
-.workspace { display: grid; grid-template-columns: minmax(520px, 46%) 1fr; gap: 12px; padding: 12px 16px 16px; flex: 1; min-height: 0; }
+.workspace { --chain-w: 46%; display: grid; grid-template-columns: minmax(380px, var(--chain-w)) 10px minmax(420px, 1fr); gap: 0 4px; padding: 12px 16px 16px; flex: 1; min-height: 0; }
+.splitter { cursor: col-resize; position: relative; border-radius: 6px; margin: 40px 0; transition: background .12s; }
+.splitter::before { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 40px; margin: -20px 0 0 -2px; border-radius: 2px; background: var(--line-strong); }
+.splitter:hover, .splitter.dragging { background: var(--accent-soft); } .splitter:hover::before, .splitter.dragging::before { background: var(--accent); }
+body.resizing { cursor: col-resize; user-select: none; } body.resizing iframe, body.resizing .tv-chart { pointer-events: none; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 
 /* chain */
@@ -196,15 +200,19 @@ body.sim { display: flex; flex-direction: column; height: 100vh; overflow: hidde
 .legs-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px 6px; gap: 10px; }
 .legs-head h2 { margin: 0; }
 .name-input { width: 190px; padding: 4px 9px; font-size: 13px; }
-.legs-table { font-variant-numeric: tabular-nums; } .legs-table th, .legs-table td { padding: 5px 8px; font-size: 12.5px; }
+.legs-table { font-variant-numeric: tabular-nums; } .legs-table th, .legs-table td { padding: 4px 6px; font-size: 12px; }
 .legs-table .side-b { color: var(--green); font-weight: 700; } .legs-table .side-s { color: var(--red); font-weight: 700; }
-.legs-table input.lots { width: 54px; padding: 2px 6px; text-align: center; }
-.legs-table .pill { font: inherit; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-weight: 600; }
+.legs-table input.lots { width: 46px; padding: 2px 4px; text-align: center; }
+.legs-table .pill { font: inherit; border: 1px solid var(--line-strong); background: var(--panel); border-radius: 6px; padding: 1px 6px; cursor: pointer; font-weight: 600; font-size: 11px; }
 .legs-table .toggle-leg { width: 14px; height: 14px; }
 .legs-table tr.off td { opacity: .45; }
-.legs .table-wrap { overflow: auto; flex: 1; }
-.legs > .legs-table { display: block; overflow: auto; flex: 1; min-height: 0; }
-.legs > .legs-table thead, .legs > .legs-table tbody, .legs > .legs-table tr { display: table; width: 100%; table-layout: fixed; }
+.legs-table tr.closed td { background: var(--panel-2); }
+.legs-table tr.closed .pill { opacity: .6; cursor: default; }
+.legs-table input.exit-price { width: 84px; padding: 2px 6px; text-align: right; }
+.legs-table .closed-cell small { font-size: 10px; margin-left: 4px; }
+.legs .table-wrap { overflow: auto; flex: 1; min-height: 0; }
+.legs-table th, .legs-table td { white-space: nowrap; }
+.legs-table th:first-child, .legs-table td:first-child { width: 28px; }
 .legs-foot { display: flex; gap: 18px; padding: 8px 16px 12px; border-top: 1px solid var(--line); flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
 .legs-foot b { color: var(--text); font-variant-numeric: tabular-nums; }
 .legs-foot .warn { color: var(--amber); font-weight: 600; }
@@ -220,7 +228,7 @@ body.sim { display: flex; flex-direction: column; height: 100vh; overflow: hidde
 
 @media (max-width: 1100px) {
   body.sim { height: auto; overflow: auto; }
-  .workspace { grid-template-columns: 1fr; }
+  .workspace { grid-template-columns: 1fr !important; } .splitter { display: none; }
   .chain-panel { height: 70vh; } .legs { max-height: none; } .chart-wrap, .tv-chart { height: 300px; flex: none; }
   .timebar { grid-template-columns: 1fr 1fr; } .time-now { grid-column: 1 / -1; order: -1; } .autoplay { grid-column: 1 / -1; justify-content: center; }
   .time-steps:first-child { justify-content: flex-start; }

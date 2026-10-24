@@ -29,11 +29,13 @@
     payoffZoom: null, pnlZoom: null, pnlPoints: null, pnlMarks: null,
   };
   const underlyings = () => window.APP.underlyings;
+  let uidSeq = 0;
+  const newUid = () => ++uidSeq + '-' + Date.now().toString(36);
   const U = () => underlyings().find((x) => x.symbol === S.u);
 
   /* ---------- URL state ---------- */
   function encodeState() {
-    return { u: S.u, at: S.at, n: S.name, e: S.expiry, legs: S.legs.map((l) => ({ i: l.id, k: l.kind, st: l.strike, ex: l.expiry, s: l.side, l: l.lots, ep: l.entryPrice, ea: l.entryAt, on: l.on ? 1 : 0 })) };
+    return { u: S.u, at: S.at, n: S.name, e: S.expiry, legs: S.legs.map((l) => ({ i: l.id, k: l.kind, st: l.strike, ex: l.expiry, s: l.side, l: l.lots, ep: l.entryPrice, ea: l.entryAt, on: l.on ? 1 : 0, ...(l.closed ? { xp: l.exitPrice, xa: l.exitAt } : {}) })) };
   }
   function writeHash() { try { history.replaceState(null, '', '#s=' + b64e(JSON.stringify(encodeState()))); } catch (e) { /* ignore */ } }
   function readHash() {
@@ -47,7 +49,7 @@
     if (st.at) S.at = st.at;
     S.name = st.n || '';
     S.expiry = st.e || null;
-    S.legs = (st.legs || []).map((l) => ({ id: l.i, kind: l.k, strike: +l.st, expiry: l.ex, side: l.s, lots: +l.l || 1, entryPrice: +l.ep, entryAt: l.ea, on: l.on !== 0, lotSize: 0, now: null }));
+    S.legs = (st.legs || []).map((l) => ({ uid: newUid(), id: l.i, kind: l.k, strike: +l.st, expiry: l.ex, side: l.s, lots: +l.l || 1, entryPrice: +l.ep, entryAt: l.ea, on: l.on !== 0, lotSize: 0, now: null, closed: l.xa !== undefined, exitPrice: l.xp !== undefined ? +l.xp : null, exitAt: l.xa || null }));
   }
 
   /* ---------- underlying & time ---------- */
@@ -124,7 +126,8 @@
     try { S.chain = await api('/api/chain', { u: S.u, at: S.at, expiry: S.expiry }); S.chainExpiry = S.expiry; } catch (e) { toast(e.message); return; }
     renderChain();
   }
-  function legAt(id) { return S.legs.find((l) => l.id === id); }
+  function legAt(id) { return S.legs.find((l) => l.id === id && !l.closed); } // open leg on a contract (chain highlight, merging)
+  function legByUid(uid) { return S.legs.find((l) => l.uid === uid); }
   function renderChain() {
     if (!S.chain) return;
     const greeks = $('chain-greeks').checked, oiBars = $('chain-oi').checked;
@@ -173,20 +176,28 @@
     const row = S.chain.rows.find((r) => String(r.strike) === td.closest('tr').dataset.strike);
     const c = row[td.dataset.kind];
     if (c.ltp === null) { toast('No price available for this contract at this time'); return; }
-    addLeg({ id: c.id, kind: td.dataset.kind, strike: row.strike, expiry: S.chainExpiry, side, lots: 1, entryPrice: c.ltp, entryAt: S.at, on: true, lotSize: S.chain.lot_size });
+    addLeg({ uid: newUid(), id: c.id, kind: td.dataset.kind, strike: row.strike, expiry: S.chainExpiry, side, lots: 1, entryPrice: c.ltp, entryAt: S.at, on: true, lotSize: S.chain.lot_size, closed: false, exitPrice: null, exitAt: null });
   });
   $('chain-greeks').onchange = renderChain; $('chain-oi').onchange = renderChain;
   $('chain-oi').closest('label').lastChild.textContent = ' OI / volume bars';
 
   /* ---------- legs ---------- */
   function addLeg(leg) {
-    const existing = S.legs.find((l) => l.id === leg.id);
+    const existing = legAt(leg.id); // only merge into an OPEN leg; closed legs stay booked
     if (existing) {
       if (existing.side === leg.side) existing.lots += 1; else { existing.side = leg.side; existing.entryPrice = leg.entryPrice; existing.entryAt = leg.entryAt; }
     } else { S.legs.push(leg); }
     refreshLegs(); renderChain(); writeHash();
   }
-  function removeLeg(id) { S.legs = S.legs.filter((l) => l.id !== id); refreshLegs(); renderChain(); writeHash(); }
+  function removeLeg(uid) { S.legs = S.legs.filter((l) => l.uid !== uid); refreshLegs(); renderChain(); writeHash(); }
+  function closeLeg(uid, price) {
+    const l = legByUid(uid); if (!l || l.closed) return;
+    if (!(price > 0)) { toast('Enter a valid exit price'); return; }
+    l.closed = true; l.exitPrice = price; l.exitAt = S.at;
+    renderLegs(); renderPayoff(); renderChain(); writeHash(); if (S.view === 'pnl') loadPnl(); if (S.view === 'spot') loadSpotChart();
+    toast(`${l.side === 'B' ? 'Sold' : 'Bought back'} ${l.kind} ${fmtNum(l.strike)} at ${fmtNum(price, 2)}: ${fmtMoney(legPnl(l))} booked`);
+  }
+  function reopenLeg(uid) { const l = legByUid(uid); if (!l) return; l.closed = false; l.exitPrice = null; l.exitAt = null; refreshLegs(); renderChain(); writeHash(); }
   async function refreshLegs() {
     if (S.legs.length) {
       try {
@@ -200,50 +211,71 @@
   }
   const qty = (l) => l.lots * (l.lotSize || S.snap?.lot_size || 1);
   const sign = (l) => (l.side === 'B' ? 1 : -1);
-  const legPnl = (l) => (l.now === null || l.now === undefined ? 0 : sign(l) * (l.now - l.entryPrice) * qty(l));
+  const legPnl = (l) => { const px = l.closed ? l.exitPrice : l.now; return (px === null || px === undefined ? 0 : sign(l) * (px - l.entryPrice) * qty(l)); };
   function charges(l) {
     const c = S.settings?.charges; if (!c) return 0;
-    const q = qty(l), entry = l.entryPrice * q, exit = (l.now ?? l.entryPrice) * q;
+    const q = qty(l), entry = l.entryPrice * q, exit = (l.closed ? l.exitPrice : (l.now ?? l.entryPrice)) * q;
     const sellTurnover = l.side === 'S' ? entry : exit, buyTurnover = l.side === 'B' ? entry : exit, turnover = entry + exit;
     const brokerage = c.brokerage_per_order * 2, exch = turnover * c.exchange_txn_pct / 100, sebi = turnover * c.sebi_fee_pct / 100;
     return brokerage + exch + sebi + sellTurnover * c.stt_sell_pct / 100 + buyTurnover * c.stamp_duty_buy_pct / 100 + (brokerage + exch + sebi) * c.gst_pct / 100;
   }
-  const activeLegs = () => S.legs.filter((l) => l.on);
+  const activeLegs = () => S.legs.filter((l) => l.on && !l.closed);   // open positions: payoff, Greeks
+  const bookedLegs = () => S.legs.filter((l) => l.on && l.closed);    // squared off: realised P&L only
+  const realised = () => bookedLegs().reduce((s, l) => s + legPnl(l), 0);
   function renderLegs() {
     const body = $('legs-body'); $('legs-count').textContent = S.legs.length;
     if (!S.legs.length) { body.innerHTML = '<tr><td colspan="13" class="muted center">No legs yet. Click a premium in the chain or pick a ready-made strategy.</td></tr>'; $('legs-foot').innerHTML = ''; return; }
     body.innerHTML = S.legs.map((l) => {
       const pnl = legPnl(l);
-      return `<tr class="${l.on ? '' : 'off'}" data-id="${l.id}">
+      const closing = S.closingUid === l.uid;
+      const nowCell = l.closed
+        ? `<td class="closed-cell" title="Closed ${fmtAt(l.exitAt)}">${fmtNum(l.exitPrice, 2)} <span class="tag">closed ${l.exitAt.slice(11, 16)}</span></td>`
+        : `<td class="${l.stale && !l.settled ? 'stale-now' : ''}" title="${l.stale && !l.settled ? 'No trade at this minute. Showing the last known price.' : ''}">${l.now === null || l.now === undefined ? '–' : fmtNum(l.now, 2)}${l.settled ? ' <small class="muted">settled</small>' : (l.stale ? ' <small class="muted">last</small>' : '')}</td>`;
+      const actions = closing
+        ? `<td class="nowrap close-form"><input type="number" step="0.05" min="0.05" class="exit-price" value="${(l.now ?? l.entryPrice).toFixed(2)}" title="Exit price"> <button class="btn btn-sm btn-primary" data-act="confirm-close" title="Book at this price now">✓</button> <button class="btn btn-sm btn-ghost" data-act="cancel-close">✕</button></td>`
+        : `<td class="nowrap">${l.closed ? `<button class="btn btn-sm btn-ghost" data-act="reopen" title="Undo the square-off">Reopen</button>` : `<button class="btn btn-sm" data-act="close" title="Square off this leg at the current time">Close</button>`} <button class="btn btn-sm btn-ghost" data-act="remove" title="Remove leg">✕</button></td>`;
+      return `<tr class="${l.on ? '' : 'off'} ${l.closed ? 'closed' : ''}" data-uid="${l.uid}" data-id="${l.id}">
         <td><input type="checkbox" class="toggle-leg" ${l.on ? 'checked' : ''} title="Include leg"></td>
         <td><button class="pill side-${l.side.toLowerCase()}" data-act="side">${l.side === 'B' ? 'BUY' : 'SELL'}</button></td>
         <td>${fmtDate(l.expiry)}${l.expired ? ' <span class="tag">expired</span>' : ''}</td><td>${fmtNum(l.strike)}</td><td>${l.kind}</td>
-        <td><input type="number" class="lots" min="1" max="500" value="${l.lots}"></td>
+        <td><input type="number" class="lots" min="1" max="500" value="${l.lots}" ${l.closed ? 'disabled' : ''}></td>
         <td title="Entered ${fmtAt(l.entryAt)}">${fmtNum(l.entryPrice, 2)}</td>
-        <td class="${l.stale && !l.settled ? 'stale-now' : ''}" title="${l.stale && !l.settled ? 'No trade at this minute. Showing the last known price.' : ''}">${l.now === null || l.now === undefined ? '–' : fmtNum(l.now, 2)}${l.settled ? ' <small class="muted">settled</small>' : (l.stale ? ' <small class="muted">last</small>' : '')}</td>
-        <td class="${pnl >= 0 ? 'pos' : 'neg'}"><b>${fmtMoney(pnl)}</b></td>
-        <td>${l.iv ? l.iv.toFixed(1) : '–'}</td><td>${l.delta !== null && l.delta !== undefined ? (sign(l) * l.delta).toFixed(2) : '–'}</td><td>${l.theta !== null && l.theta !== undefined ? fmtNum(sign(l) * l.theta * qty(l), 0) : '–'}</td>
-        <td><button class="btn btn-sm btn-ghost" data-act="remove" title="Remove leg">✕</button></td></tr>`;
+        ${nowCell}
+        <td class="${pnl >= 0 ? 'pos' : 'neg'}"><b>${fmtMoney(pnl)}</b>${l.closed ? ' <small class="muted">booked</small>' : ''}</td>
+        <td>${!l.closed && l.iv ? l.iv.toFixed(1) : '–'}</td><td>${!l.closed && l.delta !== null && l.delta !== undefined ? (sign(l) * l.delta).toFixed(2) : '–'}</td><td>${!l.closed && l.theta !== null && l.theta !== undefined ? fmtNum(sign(l) * l.theta * qty(l), 0) : '–'}</td>
+        ${actions}</tr>`;
     }).join('');
     const legs = activeLegs();
-    const total = legs.reduce((s, l) => s + legPnl(l), 0), ch = legs.reduce((s, l) => s + charges(l), 0);
+    const booked = realised();
+    const total = legs.reduce((s, l) => s + legPnl(l), 0) + booked, ch = legs.concat(bookedLegs()).reduce((s, l) => s + charges(l), 0);
     const premium = legs.reduce((s, l) => s - sign(l) * l.entryPrice * qty(l), 0);
     const delta = legs.reduce((s, l) => s + (l.delta || 0) * sign(l) * qty(l), 0), theta = legs.reduce((s, l) => s + (l.theta || 0) * sign(l) * qty(l), 0);
     const vega = legs.reduce((s, l) => s + (l.vega || 0) * sign(l) * qty(l), 0), gamma = legs.reduce((s, l) => s + (l.gamma || 0) * sign(l) * qty(l), 0);
     const includeCharges = $('charges-toggle').checked;
     const net = total - (includeCharges ? ch : 0);
     const staleCount = legs.filter((l) => l.stale && !l.settled).length;
-    $('legs-foot').innerHTML = (staleCount ? `<span class="warn">⚠ ${staleCount} leg${staleCount > 1 ? 's' : ''} without a trade at this minute, using last known price</span>` : '') + `<span>Net premium <b>${premium >= 0 ? 'credit ' : 'debit '}${fmtMoney(Math.abs(premium))}</b></span><span>Current P&amp;L <b class="${net >= 0 ? 'pos' : 'neg'}">${fmtMoney(net)}</b></span><span>Charges <b>${fmtMoney(ch)}</b>${includeCharges ? '' : ' <span class="muted">(not included)</span>'}</span><span>Δ <b>${fmtNum(delta, 1)}</b></span><span>Γ <b>${fmtNum(gamma, 3)}</b></span><span>Θ/day <b>${fmtNum(theta, 0)}</b></span><span>Vega <b>${fmtNum(vega, 0)}</b></span>`;
+    $('legs-foot').innerHTML = (staleCount ? `<span class="warn">⚠ ${staleCount} leg${staleCount > 1 ? 's' : ''} without a trade at this minute, using last known price</span>` : '') + `<span>Net premium <b>${premium >= 0 ? 'credit ' : 'debit '}${fmtMoney(Math.abs(premium))}</b></span><span>Current P&amp;L <b class="${net >= 0 ? 'pos' : 'neg'}">${fmtMoney(net)}</b></span>${bookedLegs().length ? `<span>Booked <b class="${booked >= 0 ? 'pos' : 'neg'}">${fmtMoney(booked)}</b></span>` : ''}<span>Charges <b>${fmtMoney(ch)}</b>${includeCharges ? '' : ' <span class="muted">(not included)</span>'}</span><span>Δ <b>${fmtNum(delta, 1)}</b></span><span>Γ <b>${fmtNum(gamma, 3)}</b></span><span>Θ/day <b>${fmtNum(theta, 0)}</b></span><span>Vega <b>${fmtNum(vega, 0)}</b></span>`;
   }
   $('legs-body').addEventListener('click', (ev) => {
-    const tr = ev.target.closest('tr'); if (!tr) return; const l = legAt(+tr.dataset.id); if (!l) return;
+    const tr = ev.target.closest('tr'); if (!tr) return; const l = legByUid(tr.dataset.uid); if (!l) return;
     const act = ev.target.dataset.act;
-    if (act === 'remove') removeLeg(l.id);
-    if (act === 'side') { l.side = l.side === 'B' ? 'S' : 'B'; renderLegs(); renderPayoff(); renderChain(); writeHash(); }
+    if (act === 'remove') removeLeg(l.uid);
+    if (act === 'side' && !l.closed) { l.side = l.side === 'B' ? 'S' : 'B'; renderLegs(); renderPayoff(); renderChain(); writeHash(); }
+    if (act === 'close') { S.closingUid = l.uid; renderLegs(); const inp = $('legs-body').querySelector('.exit-price'); if (inp) { inp.focus(); inp.select(); } }
+    if (act === 'cancel-close') { S.closingUid = null; renderLegs(); }
+    if (act === 'confirm-close') { const inp = tr.querySelector('.exit-price'); S.closingUid = null; closeLeg(l.uid, +inp.value); }
+    if (act === 'reopen') reopenLeg(l.uid);
+  });
+  $('legs-body').addEventListener('keydown', (ev) => {
+    if (!ev.target.classList.contains('exit-price')) return;
+    const tr = ev.target.closest('tr'); const l = legByUid(tr.dataset.uid);
+    if (ev.key === 'Enter') { S.closingUid = null; closeLeg(l.uid, +ev.target.value); }
+    if (ev.key === 'Escape') { S.closingUid = null; renderLegs(); }
   });
   $('legs-body').addEventListener('change', (ev) => {
-    const tr = ev.target.closest('tr'); if (!tr) return; const l = legAt(+tr.dataset.id); if (!l) return;
-    if (ev.target.classList.contains('lots')) l.lots = Math.max(1, Math.min(500, +ev.target.value || 1));
+    const tr = ev.target.closest('tr'); if (!tr) return; const l = legByUid(tr.dataset.uid); if (!l) return;
+    if (ev.target.classList.contains('exit-price')) return;
+    if (ev.target.classList.contains('lots') && !l.closed) l.lots = Math.max(1, Math.min(500, +ev.target.value || 1));
     if (ev.target.classList.contains('toggle-leg')) l.on = ev.target.checked;
     renderLegs(); renderPayoff(); writeHash(); if (S.view === 'pnl') loadPnl();
   });
@@ -254,6 +286,7 @@
   function payoffData() {
     const legs = activeLegs(); const spot = S.snap?.spot?.ltp;
     if (!legs.length || !spot) return null;
+    const booked = realised();
     const r = S.settings?.risk_free_rate ?? 0.065;
     const pct = Math.max(2, Math.min(40, +$('payoff-range').value || 8)) / 100;
     const n = 160, xs = [];
@@ -262,7 +295,7 @@
     const target = legs.reduce((m, l) => (l.expiry < m ? l.expiry : m), legs[0].expiry); // nearest expiry
     const targetAt = target + 'T15:30';
     const includeCharges = $('charges-toggle').checked;
-    const ch = includeCharges ? legs.reduce((s, l) => s + charges(l), 0) : 0;
+    const ch = (includeCharges ? legs.concat(bookedLegs()).reduce((s, l) => s + charges(l), 0) : 0) - booked; // charges reduce, booked profit lifts the curves
     const ivOf = (l) => (l.iv ? l.iv / 100 : 0.15);
     const valueAtExpiry = (x) => legs.reduce((s, l) => {
       const val = l.expiry === target ? Math.max(0, l.kind === 'CE' ? x - l.strike : l.strike - x) : bs(l.kind, x, l.strike, yearsBetween(targetAt, l.expiry), r, ivOf(l));
@@ -301,20 +334,20 @@
     window.Charts.drawPayoff($('payoff-chart'), $('payoff-tip'), d, { onZoom: (a, b) => { S.payoffZoom = [a, b]; renderPayoff(); } });
     $('payoff-reset').hidden = !S.payoffZoom;
     const m = $('metrics');
-    if (!d) { m.innerHTML = ''; return; }
+    if (!d) { m.innerHTML = bookedLegs().length ? `<div class="metric"><span class="metric-label">Booked P&L</span><span class="metric-value ${realised() >= 0 ? 'pos' : 'neg'}">${fmtMoney(realised())}</span></div><div class="metric"><span class="metric-label">Open legs</span><span class="metric-value">none</span></div>` : ''; return; }
     const legs = activeLegs();
-    const pnlNow = legs.reduce((s, l) => s + legPnl(l), 0) - ($('charges-toggle').checked ? legs.reduce((s, l) => s + charges(l), 0) : 0);
+    const pnlNow = legs.reduce((s, l) => s + legPnl(l), 0) + realised() - ($('charges-toggle').checked ? legs.concat(bookedLegs()).reduce((s, l) => s + charges(l), 0) : 0);
     const metric = (label, value, cls = '') => `<div class="metric"><span class="metric-label">${label}</span><span class="metric-value ${cls}">${value}</span></div>`;
     m.innerHTML = metric('Max profit', d.maxProfit === null ? 'Unlimited' : fmtMoney(d.maxProfit), 'pos') + metric('Max loss', d.maxLoss === null ? 'Unlimited' : fmtMoney(d.maxLoss), 'neg')
       + metric('Breakeven' + (d.breakevens.length > 1 ? 's' : ''), d.breakevens.length ? d.breakevens.map((b) => fmtNum(b)).join(' · ') : '–')
-      + metric('Current P&L', fmtMoney(pnlNow), pnlNow >= 0 ? 'pos' : 'neg') + metric('Payoff at', fmtDate(d.target) + ' expiry');
+      + metric('Current P&L', fmtMoney(pnlNow), pnlNow >= 0 ? 'pos' : 'neg') + (bookedLegs().length ? metric('Booked', fmtMoney(realised()), realised() >= 0 ? 'pos' : 'neg') : '') + metric('Payoff at', fmtDate(d.target) + ' expiry');
   }
   ['payoff-t0', 'charges-toggle', 'payoff-range', 'sd-weekly', 'sd-monthly'].forEach((id) => { $(id).addEventListener('change', () => { renderLegs(); renderPayoff(); if (S.view === 'spot') loadSpotChart(); }); });
   $('payoff-range').addEventListener('input', renderPayoff);
 
   /* ---------- P&L over time ---------- */
   async function loadPnl() {
-    const legs = activeLegs();
+    const legs = S.legs.filter((l) => l.on);
     if (!legs.length) { window.Charts.drawPnl($('pnl-chart'), $('pnl-tip'), [], []); $('pnl-metrics').innerHTML = ''; return; }
     const from = legs.reduce((m, l) => (l.entryAt < m ? l.entryAt : m), legs[0].entryAt);
     if (from >= S.at) { window.Charts.drawPnl($('pnl-chart'), $('pnl-tip'), [{ t: parseTs(S.at), v: 0 }], []); $('pnl-metrics').innerHTML = ''; return; }
@@ -328,11 +361,14 @@
       legs.forEach((l) => {
         const ser = legSeries[l.id];
         while (idx[l.id] < ser.length && ser[idx[l.id]][0] <= ts) { last[l.id] = ser[idx[l.id]][1]; idx[l.id]++; }
-        if (parseTs(l.entryAt) <= ts) v += sign(l) * ((last[l.id] ?? l.entryPrice) - l.entryPrice) * qty(l);
+        if (parseTs(l.entryAt) <= ts) {
+          const px = (l.closed && parseTs(l.exitAt) <= ts) ? l.exitPrice : (last[l.id] ?? l.entryPrice);
+          v += sign(l) * (px - l.entryPrice) * qty(l);
+        }
       });
       return { t: ts, v, spot };
     });
-    const marks = legs.map((l) => ({ t: parseTs(l.entryAt), label: `${l.side} ${l.kind} ${fmtNum(l.strike)}` }));
+    const marks = legs.map((l) => ({ t: parseTs(l.entryAt), label: `${l.side} ${l.kind} ${fmtNum(l.strike)}` })).concat(legs.filter((l) => l.closed).map((l) => ({ t: parseTs(l.exitAt), label: `close ${l.kind} ${fmtNum(l.strike)}` })));
     S.pnlPoints = points; S.pnlMarks = marks;
     drawPnlView();
     if (points.length) {
@@ -385,7 +421,9 @@
     // lightweight-charts shows UTC; shift by IST offset so labels read as IST.
     const shift = 19800;
     S.spotSeries.setData(data.candles.map((c) => ({ time: c.time + shift, open: c.open, high: c.high, low: c.low, close: c.close })));
-    S.spotSeries.setMarkers(S.legs.filter((l) => l.on).map((l) => ({ time: Math.floor(parseTs(l.entryAt).getTime() / 1000) + shift, position: l.side === 'B' ? 'belowBar' : 'aboveBar', color: l.side === 'B' ? '#22c55e' : '#ef4444', shape: l.side === 'B' ? 'arrowUp' : 'arrowDown', text: `${l.side} ${l.kind} ${fmtNum(l.strike)}` })).sort((a, b) => a.time - b.time));
+    const entries = S.legs.filter((l) => l.on).map((l) => ({ time: Math.floor(parseTs(l.entryAt).getTime() / 1000) + shift, position: l.side === 'B' ? 'belowBar' : 'aboveBar', color: l.side === 'B' ? '#22c55e' : '#ef4444', shape: l.side === 'B' ? 'arrowUp' : 'arrowDown', text: `${l.side} ${l.kind} ${fmtNum(l.strike)}` }));
+    const exits = S.legs.filter((l) => l.on && l.closed).map((l) => ({ time: Math.floor(parseTs(l.exitAt).getTime() / 1000) + shift, position: 'inBar', color: '#64748b', shape: 'circle', text: `close ${l.kind} ${fmtNum(l.strike)}` }));
+    S.spotSeries.setMarkers(entries.concat(exits).sort((a, b) => a.time - b.time));
     (S.spotLines || []).forEach((l) => S.spotSeries.removePriceLine(l));
     S.spotLines = [];
     const spot = S.snap && S.snap.spot && S.snap.spot.ltp, mv = (S.snap && S.snap.moves) || {};
@@ -434,7 +472,7 @@
       const row = ch.rows[atmIdx + tl.offset];
       const c = row && row[tl.kind];
       if (!c || c.ltp === null) { toast(`Strike ${tl.offset > 0 ? 'ATM+' : 'ATM'}${tl.offset} ${tl.kind} not available in the stored band`); return; }
-      legs.push({ id: c.id, kind: tl.kind, strike: row.strike, expiry: ch.expiry, side: tl.side, lots: tl.lots || 1, entryPrice: c.ltp, entryAt: S.at, on: true, lotSize: ch.lot_size });
+      legs.push({ uid: newUid(), id: c.id, kind: tl.kind, strike: row.strike, expiry: ch.expiry, side: tl.side, lots: tl.lots || 1, entryPrice: c.ltp, entryAt: S.at, on: true, lotSize: ch.lot_size, closed: false, exitPrice: null, exitAt: null });
     }
     S.legs = legs; S.name = t.name; $('strategy-name').value = t.name;
     setView('payoff'); refreshLegs(); renderChain(); writeHash(); toast(`${t.name} loaded with ${legs.length} leg${legs.length > 1 ? 's' : ''}`);
@@ -504,6 +542,29 @@
     writeHash();
     try { await navigator.clipboard.writeText(location.href); toast('Link copied to clipboard'); } catch (e) { prompt('Copy this link', location.href); }
   };
+
+  /* ---------- resizable divider between chain and strategy panels ---------- */
+  (function initSplitter() {
+    const ws = document.querySelector('.workspace'), sp = $('splitter');
+    if (!ws || !sp) return;
+    const apply = (px) => { ws.style.setProperty('--chain-w', px + 'px'); };
+    try { const saved = +localStorage.getItem('chainWidth'); if (saved > 300) apply(saved); } catch (e) { /* ignore */ }
+    let dragging = false;
+    const onMove = (ev) => {
+      if (!dragging) return;
+      const r = ws.getBoundingClientRect();
+      const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left - 16;
+      const px = Math.max(380, Math.min(r.width - 16 * 2 - 420 - 10, x));
+      apply(px);
+    };
+    const stop = () => { if (!dragging) return; dragging = false; sp.classList.remove('dragging'); document.body.classList.remove('resizing'); try { localStorage.setItem('chainWidth', String(parseInt(ws.style.getPropertyValue('--chain-w'), 10))); } catch (e) { /* ignore */ } renderPayoff(); if (S.view === 'pnl') drawPnlView(); };
+    sp.addEventListener('mousedown', (ev) => { dragging = true; sp.classList.add('dragging'); document.body.classList.add('resizing'); ev.preventDefault(); });
+    sp.addEventListener('touchstart', () => { dragging = true; sp.classList.add('dragging'); }, { passive: true });
+    window.addEventListener('mousemove', onMove); window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('mouseup', stop); window.addEventListener('touchend', stop);
+    sp.addEventListener('dblclick', () => { ws.style.removeProperty('--chain-w'); try { localStorage.removeItem('chainWidth'); } catch (e) { /* ignore */ } renderPayoff(); });
+    sp.addEventListener('keydown', (ev) => { const cur = parseInt(getComputedStyle(ws).getPropertyValue('--chain-w'), 10) || ws.firstElementChild.getBoundingClientRect().width; if (ev.key === 'ArrowLeft') apply(Math.max(380, cur - 20)); if (ev.key === 'ArrowRight') apply(cur + 20); if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { ev.preventDefault(); stop(); } });
+  })();
 
   /* ---------- theme ---------- */
   $('theme-toggle').onclick = () => {

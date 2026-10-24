@@ -31,6 +31,8 @@ It runs on a laptop with the PHP built-in server and deploys to ordinary shared 
   The chain shows the last traded premium, implied volatility, delta, theta and traded volume for every strike, with in-the-money shading and the at-the-money row highlighted.
 - **Build a strategy.** Click a premium (or its B/S buttons) to add a buy or sell leg, or pick one of 29 ready-made strategies grouped as Bullish, Bearish, Neutral and Other.
   Legs can be edited: side, lots, enabled or disabled, removed.
+- **Square off legs as you go.** Close any leg at the current replay time at an editable price (prefilled with the last traded price). The booked profit or loss stays in the strategy totals and the payoff, the leg can be reopened, and new legs can be added at any later time, including on the same contract.
+- **Resizable layout.** Drag the divider between the option chain and the strategy panel to give either side more room; double-click it to reset.
 - **Travel through time.** Step by ±5 minutes, ±15 minutes, ±1 hour, start of day, end of day, or ±1 trading day.
   Weekends and exchange holidays are skipped.
   Arrow keys step, space toggles autoplay.
