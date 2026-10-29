@@ -57,6 +57,13 @@ final class TradingCalendarTest extends TestCase
         $this->assertSame('2026-10-21 09:15', TradingCalendar::normalise($this->t('2026-10-21 08:00'))->format('Y-m-d H:i'));
     }
 
+    public function testTimesSnapToFiveMinuteGrid(): void
+    {
+        $this->assertSame('2026-10-21 11:05', TradingCalendar::normalise($this->t('2026-10-21 11:07'))->format('Y-m-d H:i'));
+        $this->assertSame('2026-10-21 11:10', TradingCalendar::step($this->t('2026-10-21 11:07'), '+5m')->format('Y-m-d H:i'));
+        $this->assertSame('2026-10-21 15:30', TradingCalendar::normalise($this->t('2026-10-21 15:30'))->format('Y-m-d H:i'));
+    }
+
     public function testPlusOneHourAcrossClose(): void
     {
         // 15:00 is index 345; +60 = 405 -> next day index 30 = 09:45

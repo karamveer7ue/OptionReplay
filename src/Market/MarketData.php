@@ -52,8 +52,8 @@ final class MarketData
         $max = $spot['mx'] ?? null;
         $rows = Database::all(
             'SELECT i.expiry,
-                    (SELECT MIN(ts) FROM candles_1m c WHERE c.instrument_id = i.id) mn,
-                    (SELECT MAX(ts) FROM candles_1m c WHERE c.instrument_id = i.id AND TIME(c.ts) <= \'15:30:00\') mx
+                    (SELECT MIN(ts) FROM candles_5m c WHERE c.instrument_id = i.id) mn,
+                    (SELECT DATE_ADD(MAX(ts), INTERVAL 5 MINUTE) FROM candles_5m c WHERE c.instrument_id = i.id AND TIME(c.ts) <= \'15:25:00\') mx
              FROM instruments i WHERE i.underlying_id = ? HAVING mn IS NOT NULL',
             [$underlyingId],
         );
@@ -133,7 +133,9 @@ final class MarketData
     }
 
     /**
-     * Last known 1-minute quote (close, volume, oi) for many instruments at $t, same session only.
+     * Quote for many instruments at $t from 5-minute candles, same session only. A candle labelled
+     * 09:15 covers 09:15:00 to 09:19:59, so the price "at" $t is the close of the last candle that
+     * ENDED by $t (label <= t - 5min); at the session open the first candle's open is used instead.
      * Falls back to the previous daily close (flagged stale) when the contract has not traded yet that day.
      * @param int[] $ids
      * @return array<int,array{ltp:float,volume:int,oi:?int,ts:string,stale:bool}>
@@ -146,12 +148,13 @@ final class MarketData
         $ids = array_values(array_unique(array_map('intval', $ids)));
         $in = implode(',', array_fill(0, count($ids), '?'));
         $day = $t->format('Y-m-d');
+        $cutoff = $t->modify('-5 minutes')->format('Y-m-d H:i:s');
         $rows = Database::all(
             "SELECT c1.instrument_id, c1.ts, c1.c, c1.volume, c1.oi
-             FROM candles_1m c1
-             JOIN (SELECT instrument_id, MAX(ts) ts FROM candles_1m WHERE instrument_id IN ({$in}) AND ts >= ? AND ts <= ? GROUP BY instrument_id) m
+             FROM candles_5m c1
+             JOIN (SELECT instrument_id, MAX(ts) ts FROM candles_5m WHERE instrument_id IN ({$in}) AND ts >= ? AND ts <= ? GROUP BY instrument_id) m
                ON m.instrument_id = c1.instrument_id AND m.ts = c1.ts",
-            [...$ids, "{$day} 09:00:00", $t->format('Y-m-d H:i:s')],
+            [...$ids, "{$day} 09:00:00", $cutoff],
         );
         $out = [];
         foreach ($rows as $r) {
@@ -159,10 +162,24 @@ final class MarketData
         }
         $missing = array_values(array_diff($ids, array_keys($out)));
         if ($missing) {
+            // Within the first bucket of the day: the opening print of the candle that starts at or before $t.
             $in2 = implode(',', array_fill(0, count($missing), '?'));
+            $opens = Database::all(
+                "SELECT o1.instrument_id, o1.ts, o1.o, o1.oi FROM candles_5m o1
+                 JOIN (SELECT instrument_id, MIN(ts) ts FROM candles_5m WHERE instrument_id IN ({$in2}) AND ts >= ? AND ts <= ? GROUP BY instrument_id) m
+                   ON m.instrument_id = o1.instrument_id AND m.ts = o1.ts",
+                [...$missing, "{$day} 09:00:00", $t->format('Y-m-d H:i:s')],
+            );
+            foreach ($opens as $r) {
+                $out[(int) $r['instrument_id']] = ['ltp' => $r['o'] / 100, 'volume' => 0, 'oi' => $r['oi'] !== null ? (int) $r['oi'] : null, 'ts' => $r['ts'], 'stale' => false];
+            }
+            $missing = array_values(array_diff($ids, array_keys($out)));
+        }
+        if ($missing) {
+            $in3 = implode(',', array_fill(0, count($missing), '?'));
             $prev = Database::all(
                 "SELECT d1.instrument_id, d1.day, d1.c, d1.oi FROM candles_1d d1
-                 JOIN (SELECT instrument_id, MAX(day) day FROM candles_1d WHERE instrument_id IN ({$in2}) AND day < ? GROUP BY instrument_id) m
+                 JOIN (SELECT instrument_id, MAX(day) day FROM candles_1d WHERE instrument_id IN ({$in3}) AND day < ? GROUP BY instrument_id) m
                    ON m.instrument_id = d1.instrument_id AND m.day = d1.day",
                 [...$missing, $day],
             );
@@ -322,7 +339,8 @@ final class MarketData
     }
 
     /**
-     * Close series for instruments between two instants, sampled every $stepMinutes.
+     * Close series for instruments between two instants, sampled every $stepMinutes (a multiple of 5).
+     * Each point is timestamped at the END of its 5-minute candle, i.e. the moment that close was known.
      * @param int[] $ids
      * @return array<int,array<int,array{0:string,1:float}>> instrument_id => [[ts, close], ...]
      */
@@ -332,9 +350,11 @@ final class MarketData
             return [];
         }
         $in = implode(',', array_fill(0, count($ids), '?'));
+        $step = max(5, (int) (ceil($stepMinutes / 5) * 5));
         $rows = Database::all(
-            "SELECT instrument_id, ts, c FROM candles_1m WHERE instrument_id IN ({$in}) AND ts >= ? AND ts <= ? AND MOD(MINUTE(ts) + 60*HOUR(ts) - 555, ?) = 0 ORDER BY ts",
-            [...array_map('intval', $ids), $from->format('Y-m-d H:i:s'), $to->format('Y-m-d H:i:s'), max(1, $stepMinutes)],
+            "SELECT instrument_id, DATE_ADD(ts, INTERVAL 5 MINUTE) ts, c FROM candles_5m
+             WHERE instrument_id IN ({$in}) AND ts >= ? AND ts < ? AND TIME(ts) <= '15:25:00' AND MOD(MINUTE(ts) + 60*HOUR(ts) - 555 + 5, ?) = 0 ORDER BY ts",
+            [...array_map('intval', $ids), $from->modify('-5 minutes')->format('Y-m-d H:i:s'), $to->format('Y-m-d H:i:s'), $step],
         );
         $out = [];
         foreach ($rows as $r) {

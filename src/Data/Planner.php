@@ -14,7 +14,7 @@ use App\Data\Sources\MarketDataSource;
  *
  *  - spot_1m / spot_1d: index candles for the whole lookback window, chunked to the source's limits.
  *  - discover: per underlying, resolve expiries within the window and the strike band around spot,
- *    register instruments, then queue inst_1m / inst_1d jobs for each.
+ *    register instruments, then queue inst_5m / inst_1d jobs for each (option candles are stored at 5 minutes).
  */
 final class Planner
 {
@@ -101,9 +101,9 @@ final class Planner
         foreach ($instrumentIds as [$instId, $expiry]) {
             $listFrom = max($earliest, (new \DateTimeImmutable($expiry))->modify('-120 days')->format('Y-m-d'));
             $to = min($today, $expiry);
-            foreach (array_reverse($this->chunks($listFrom, $to, $this->source->maxDays('1min'))) as $i => [$a, $b]) {
+            foreach (array_reverse($this->chunks($listFrom, $to, $this->source->maxDays('5min'))) as $i => [$a, $b]) {
                 // Newest chunk first (priority 30), daily candles next (35), older chunks after (40+).
-                $created += (int) JobQueue::enqueue('inst_1m', $uid, $instId, $a, $b, $i === 0 ? 30 : 40 + $i);
+                $created += (int) JobQueue::enqueue('inst_5m', $uid, $instId, $a, $b, $i === 0 ? 30 : 40 + $i);
             }
             foreach ($this->chunks($listFrom, $to, $this->source->maxDays('D')) as [$a, $b]) {
                 $created += (int) JobQueue::enqueue('inst_1d', $uid, $instId, $a, $b, 35);
@@ -123,7 +123,7 @@ final class Planner
         $created = (int) JobQueue::enqueue('spot_1m', $uid, null, $from, $today, 10);
         $created += (int) JobQueue::enqueue('spot_1d', $uid, null, $from, $today, 5);
         foreach (InstrumentRepository::liveForUnderlying($uid, $from) as $inst) {
-            $created += (int) JobQueue::enqueue('inst_1m', $uid, (int) $inst['id'], $from, min($today, $inst['expiry']), 15);
+            $created += (int) JobQueue::enqueue('inst_5m', $uid, (int) $inst['id'], $from, min($today, $inst['expiry']), 15);
             $created += (int) JobQueue::enqueue('inst_1d', $uid, (int) $inst['id'], $from, min($today, $inst['expiry']), 15);
         }
         return $created;
@@ -143,7 +143,7 @@ final class Planner
         $lookback = (int) ($u['lookback_days'] ?? null ?: Settings::int('lookback_days'));
         $band = min(10, (int) ($u['strike_band'] ?? null ?: Settings::int('strike_band')));
         $from = (new \DateTimeImmutable($today))->modify("-{$lookback} days")->format('Y-m-d');
-        $covered = Database::scalar('SELECT MIN(c.ts) FROM candles_1m c JOIN instruments i ON i.id = c.instrument_id WHERE i.underlying_id = ? AND i.source = ?', [$uid, 'kotak']);
+        $covered = Database::scalar('SELECT MIN(c.ts) FROM candles_5m c JOIN instruments i ON i.id = c.instrument_id WHERE i.underlying_id = ? AND i.source = ?', [$uid, 'kotak']);
         $to = $covered ? (new \DateTimeImmutable((string) $covered))->modify('-1 day')->format('Y-m-d') : $today;
         $flags = ['MONTH'];
         if (!empty($u['weekly_expiry_dow'])) {

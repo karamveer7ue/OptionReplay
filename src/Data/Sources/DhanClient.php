@@ -30,7 +30,7 @@ final class DhanClient
      * @param 'CALL'|'PUT' $side
      * @return array<string,mixed> raw Dhan payload (data.ce / data.pe arrays)
      */
-    public function rollingOption(string $exchangeSegment, int $securityId, string $expiryFlag, int $expiryCode, string $strike, string $side, string $fromDate, string $toDate, string $interval = '1'): array
+    public function rollingOption(string $exchangeSegment, int $securityId, string $expiryFlag, int $expiryCode, string $strike, string $side, string $fromDate, string $toDate, string $interval = '5'): array
     {
         $payload = [
             'exchangeSegment' => $exchangeSegment, 'interval' => $interval, 'securityId' => $securityId,

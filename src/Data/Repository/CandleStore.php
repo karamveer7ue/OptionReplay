@@ -23,10 +23,10 @@ final class CandleStore
     }
 
     /** @param Candle[] $candles */
-    public static function saveInstrument1m(int $instrumentId, array $candles, bool $overwrite = true): int
+    public static function saveInstrument5m(int $instrumentId, array $candles, bool $overwrite = true): int
     {
         return self::bulk(
-            ($overwrite ? 'INSERT INTO' : 'INSERT IGNORE INTO') . ' candles_1m (instrument_id, ts, o, h, l, c, volume, oi) VALUES ',
+            ($overwrite ? 'INSERT INTO' : 'INSERT IGNORE INTO') . ' candles_5m (instrument_id, ts, o, h, l, c, volume, oi) VALUES ',
             '(?,?,?,?,?,?,?,?)',
             $overwrite ? ' ON DUPLICATE KEY UPDATE o=VALUES(o), h=VALUES(h), l=VALUES(l), c=VALUES(c), volume=VALUES(volume), oi=COALESCE(VALUES(oi), oi)' : '',
             $candles,

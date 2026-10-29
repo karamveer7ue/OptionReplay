@@ -30,7 +30,7 @@
     <button class="step" data-step="-5m">−5m</button>
   </div>
   <div class="time-now">
-    <input type="datetime-local" id="time-input" step="60">
+    <input type="datetime-local" id="time-input" step="300">
     <div class="time-label" id="time-label">Loading…</div>
   </div>
   <div class="time-steps">

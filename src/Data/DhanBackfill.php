@@ -32,7 +32,7 @@ final class DhanBackfill
         foreach ($grouped as $key => $candles) {
             [$expiry, $strikePrice] = explode('|', $key);
             $id = InstrumentRepository::upsert((int) $u['id'], new ContractInfo($side === 'CALL' ? 'CE' : 'PE', (float) $strikePrice, $expiry, strtolower((string) $u['dhan_segment']), 'dhan', '', (int) $u['lot_size']), 'dhan');
-            $written += CandleStore::saveInstrument1m($id, $candles, false);
+            $written += CandleStore::saveInstrument5m($id, $candles, false);
         }
         return $written;
     }

@@ -118,11 +118,11 @@ final class ApiController
         }
         $ids = Request::intList('ids');
         $span = $to->getTimestamp() - $from->getTimestamp();
-        $step = $span <= 86400 ? 1 : ($span <= 5 * 86400 ? 5 : ($span <= 30 * 86400 ? 15 : 60));
+        $step = $span <= 5 * 86400 ? 5 : ($span <= 30 * 86400 ? 15 : 60);
         return Response::json([
             'step_minutes' => $step,
             'legs' => MarketData::closeSeries($ids, $from, $to, $step),
-            'spot' => array_map(fn ($c) => [date('Y-m-d H:i:s', $c['time']), $c['close']], MarketData::spotSeries((int) $u['id'], $from, $to, $step === 1 ? '1m' : ($step === 5 ? '5m' : ($step === 15 ? '15m' : '1h')))),
+            'spot' => array_map(fn ($c) => [date('Y-m-d H:i:s', $c['time']), $c['close']], MarketData::spotSeries((int) $u['id'], $from, $to, $step === 5 ? '5m' : ($step === 15 ? '15m' : '1h'))),
         ]);
     }
 

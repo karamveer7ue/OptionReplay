@@ -33,12 +33,12 @@ It runs on a laptop with the PHP built-in server and deploys to ordinary shared 
   Legs can be edited: side, lots, enabled or disabled, removed.
 - **Square off legs as you go.** Close any leg at the current replay time at an editable price (prefilled with the last traded price). The booked profit or loss stays in the strategy totals and the payoff, the leg can be reopened, and new legs can be added at any later time, including on the same contract.
 - **Resizable layout.** Drag the divider between the option chain and the strategy panel to give either side more room; double-click it to reset.
-- **Travel through time.** Step by ±5 minutes, ±15 minutes, ±1 hour, start of day, end of day, or ±1 trading day.
+- **Travel through time.** Step by ±5 minutes, ±15 minutes, ±1 hour, start of day, end of day, or ±1 trading day, on a 5-minute grid.
   Weekends and exchange holidays are skipped.
   Arrow keys step, space toggles autoplay.
 - **Autoplay** advances automatically at a chosen step and speed and stops at the edge of available data.
 - **Payoff chart** with the expiry line, the T+0 curve (Black-Scholes valued with each leg's implied volatility), profit and loss shading, breakevens, max profit and max loss, and an optional charges toggle (brokerage, STT, exchange fees, SEBI fee, stamp duty, GST).
-- **P&L over time** chart, marked-to-market from the first leg's entry to the current time.
+- **P&L over time** chart, marked-to-market every 5 minutes from the first leg's entry to the current time.
 - **Spot chart** (candlesticks at 1m, 5m, 15m, 1h, 1D) with leg entries marked.
 - **Expected-move bands**: ±1σ and ±2σ to the weekly and to the monthly expiry, from the at-the-money implied volatility at the replay time, shown on the payoff chart, as price lines on the spot chart, and as numbers in the market strip. Each can be toggled.
 - **Greeks** per leg and for the whole strategy: delta, gamma, theta per day, vega.
@@ -60,8 +60,9 @@ Dhan expired-options API ───┘
 `bin/fetch.php --run` claims jobs one at a time, calls the broker with a configurable delay between requests, backs off on HTTP 429, and exits when its time budget is spent.
 Running it every minute from cron gives continuous collection; running it with `--loop` processes the whole queue in one go.
 
-**Storage** is minute candles in InnoDB, with prices stored as integer paise to keep the tables compact.
+**Storage** is 5-minute option candles and 1-minute index spot candles in InnoDB, with prices stored as integer paise to keep the tables compact.
 Spot and option candles live in separate tables keyed by `(instrument_id, ts)`.
+A quote at a replay time is the close of the 5-minute candle that ended at that time, so there is no look-ahead.
 
 **The simulator** never touches the broker.
 At a given minute it looks up the last candle at or before that minute for every contract of the chosen expiry (falling back to the previous daily close before the first trade of the day), computes implied volatility and Greeks with Black-Scholes, and returns JSON.
@@ -209,7 +210,7 @@ What gets fetched, with defaults editable in Admin → Settings:
 | Time budget per run | 50 s | How long one `--run` processes jobs |
 
 Sizing: with the defaults, three indices produce roughly 3,000 live contracts and about 12,000 jobs for the first backfill, around 10 hours at the default pacing.
-Each contract-day is about 375 rows, so a full year of three indices at 1-minute resolution is on the order of 200 million rows (roughly 10 to 15 GB).
+Each contract-day is up to 75 rows at 5-minute resolution, so a full year of three indices is roughly 250 MB to 1 GB depending on how many contracts trade.
 Raise the delay or narrow the band if your host is small.
 
 Daily operation after the first backfill:
@@ -254,7 +255,7 @@ A read-only overview of the system.
 | Block | What it shows |
 |---|---|
 | Job counters | Pending, running, done, empty and failed jobs. Each counter links to the filtered job list. |
-| Data coverage | Per underlying: lot size and strike step, number of 1-minute spot rows and their date range, contracts known (and how many are still live), 1-minute option rows and their date range, pending and failed jobs. |
+| Data coverage | Per underlying: lot size and strike step, number of 1-minute spot rows and their date range, contracts known (and how many are still live), 5-minute option rows and their date range, pending and failed jobs. |
 | Recent fetch runs | The last 10 runs with trigger (cli, cron, manual), jobs ok and failed, requests made and rows written. |
 | Cron setup | The two cron lines to install on the server. |
 | Header | Database size and whether the Dhan backfill is configured. |
@@ -307,7 +308,7 @@ Job kinds:
 |---|---|
 | `spot_1m`, `spot_1d` | Index spot candles, one job per window. |
 | `discover` | Calls the broker for expiries and option chains, registers contracts, queues their candle jobs. |
-| `inst_1m`, `inst_1d` | Candles for one contract and one window. |
+| `inst_5m`, `inst_1d` | 5-minute and daily candles for one contract and one window. |
 | `dhan_backfill` | One Dhan request: one strike offset, one side, one expiry type, one 30-day window. |
 
 A job fails permanently after 4 attempts; use **Retry failed** once the cause is fixed.

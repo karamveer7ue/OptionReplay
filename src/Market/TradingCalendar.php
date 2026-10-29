@@ -15,6 +15,7 @@ final class TradingCalendar
     public const CLOSE = '15:30';
     public const TZ = 'Asia/Kolkata';
     public const SESSION_MINUTES = 375;
+    public const GRID_MINUTES = 5;   // option candles are stored at 5 minutes; replay times snap to this grid
 
     /** @var array<string,true>|null */
     private static ?array $holidays = null;
@@ -67,7 +68,7 @@ final class TradingCalendar
     /** Clamp a timestamp into market hours of a trading day (rolling forward when outside). */
     public static function normalise(\DateTimeImmutable $t): \DateTimeImmutable
     {
-        $t = $t->setTimezone(new \DateTimeZone(self::TZ))->setTime((int) $t->format('H'), (int) $t->format('i'), 0);
+        $t = $t->setTimezone(new \DateTimeZone(self::TZ))->setTime((int) $t->format('H'), (int) $t->format('i') - ((int) $t->format('i') % self::GRID_MINUTES), 0);
         if (!self::isTradingDay($t)) {
             return self::at(self::nextTradingDay($t), self::OPEN);
         }

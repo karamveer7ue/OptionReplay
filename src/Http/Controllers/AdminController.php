@@ -49,8 +49,8 @@ final class AdminController
             $u['spot_range'] = Database::one('SELECT MIN(ts) mn, MAX(ts) mx, COUNT(*) n FROM spot_candles_1m WHERE underlying_id = ?', [$uid]);
             $u['contracts'] = (int) Database::scalar('SELECT COUNT(*) FROM instruments WHERE underlying_id = ?', [$uid]);
             $u['live_contracts'] = (int) Database::scalar('SELECT COUNT(*) FROM instruments WHERE underlying_id = ? AND expiry >= CURDATE()', [$uid]);
-            $u['option_rows'] = (int) Database::scalar('SELECT COUNT(*) FROM candles_1m c JOIN instruments i ON i.id = c.instrument_id WHERE i.underlying_id = ?', [$uid]);
-            $u['option_range'] = Database::one('SELECT MIN(ts) mn, MAX(ts) mx FROM candles_1m c JOIN instruments i ON i.id = c.instrument_id WHERE i.underlying_id = ?', [$uid]);
+            $u['option_rows'] = (int) Database::scalar('SELECT COUNT(*) FROM candles_5m c JOIN instruments i ON i.id = c.instrument_id WHERE i.underlying_id = ?', [$uid]);
+            $u['option_range'] = Database::one('SELECT MIN(ts) mn, MAX(ts) mx FROM candles_5m c JOIN instruments i ON i.id = c.instrument_id WHERE i.underlying_id = ?', [$uid]);
             $u['jobs'] = JobQueue::counts($uid);
         }
         unset($u);
@@ -106,7 +106,7 @@ final class AdminController
         Auth::checkCsrf();
         Database::transaction(function () use ($id): void {
             Database::run('DELETE FROM fetch_jobs WHERE underlying_id = ?', [$id]);
-            Database::run('DELETE c FROM candles_1m c JOIN instruments i ON i.id = c.instrument_id WHERE i.underlying_id = ?', [$id]);
+            Database::run('DELETE c FROM candles_5m c JOIN instruments i ON i.id = c.instrument_id WHERE i.underlying_id = ?', [$id]);
             Database::run('DELETE c FROM candles_1d c JOIN instruments i ON i.id = c.instrument_id WHERE i.underlying_id = ?', [$id]);
             Database::run('DELETE FROM spot_candles_1m WHERE underlying_id = ?', [$id]);
             Database::run('DELETE FROM spot_candles_1d WHERE underlying_id = ?', [$id]);

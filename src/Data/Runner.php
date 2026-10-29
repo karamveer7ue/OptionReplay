@@ -95,7 +95,7 @@ final class Runner
                 $this->requests++;
                 $dhan = new \App\Data\Sources\DhanClient(\App\Core\Env::require('DHAN_CLIENT_ID'), \App\Core\Env::require('DHAN_ACCESS_TOKEN'));
                 return (new DhanBackfill($dhan))->run($u, $job);
-            case 'inst_1m':
+            case 'inst_5m':
             case 'inst_1d':
                 $inst = Database::one('SELECT * FROM instruments WHERE id = ?', [$job['instrument_id']]);
                 if ($inst === null) {
@@ -103,8 +103,8 @@ final class Runner
                 }
                 $this->requests++;
                 $neo = $inst['exchange_seg'] . '|' . $inst['token'];
-                if ($job['kind'] === 'inst_1m') {
-                    return CandleStore::saveInstrument1m((int) $inst['id'], $this->source->candles($neo, '1min', $job['from_date'], $job['to_date']));
+                if ($job['kind'] === 'inst_5m') {
+                    return CandleStore::saveInstrument5m((int) $inst['id'], $this->source->candles($neo, '5min', $job['from_date'], $job['to_date']));
                 }
                 return CandleStore::saveInstrument1d((int) $inst['id'], $this->source->candles($neo, 'D', $job['from_date'], $job['to_date']));
         }

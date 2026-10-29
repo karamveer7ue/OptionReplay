@@ -8,7 +8,7 @@
 <section class="card">
   <h2>Data coverage</h2>
   <table class="table">
-    <thead><tr><th>Underlying</th><th>Spot 1-min</th><th>Spot range</th><th>Contracts (live)</th><th>Option 1-min rows</th><th>Option range</th><th>Jobs pending / failed</th></tr></thead>
+    <thead><tr><th>Underlying</th><th>Spot 1-min</th><th>Spot range</th><th>Contracts (live)</th><th>Option 5-min rows</th><th>Option range</th><th>Jobs pending / failed</th></tr></thead>
     <tbody>
     <?php foreach ($underlyings as $u): ?>
       <tr>
